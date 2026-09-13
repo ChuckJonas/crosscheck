@@ -8,7 +8,7 @@ name: Compile Release
 on:
   push:
     tags:
-      - '*'
+      - '[0-9]*'  # upstream version tags; crosscheck-* tags use crosscheck-release.yml
 
 permissions:
   contents: read

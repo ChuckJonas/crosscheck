@@ -304,6 +304,14 @@ What it does:
 - Read Lichess studies offline: annotated games and opening lines with comments, variations, and arrows, plus a practice mode that hides the next move.
 - Play a local two-player game with no network.
 
+### Install
+
+1. Download `firmware-x4pro.bin` from the [latest crosscheck release](https://github.com/ChuckJonas/crosscheck/releases/latest).
+2. Go to https://crosspointreader.com/#flash-tools, select Xteink X4Pro, click "Custom .bin", and upload the file. The USB-lock warning above applies here too.
+3. Later updates arrive on the device: Settings → Check for updates reads this fork's releases, not the CrossPoint ones, so it never offers to replace crosscheck with stock firmware.
+
+Only the X4 Pro is supported: the app needs a touch screen.
+
 ### Getting a study onto the device
 
 Studies are documents that Lichess users publish. The recommended path needs no typing on the device:

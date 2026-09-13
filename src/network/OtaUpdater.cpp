@@ -19,7 +19,16 @@
 #include "FirmwareFlasher.h"
 
 namespace {
-constexpr char latestReleaseUrl[] = "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/latest";
+#ifndef OTA_RELEASE_API_URL
+#define OTA_RELEASE_API_URL "https://api.github.com/repos/crosspoint-reader/crosspoint-reader/releases/latest"
+#endif
+constexpr char latestReleaseUrl[] = OTA_RELEASE_API_URL;
+// The version numbers start at the first digit, so a prefixed tag such as
+// crosscheck-v1.0.0 compares like 1.0.0.
+const char* versionDigits(const char* text) {
+  while (*text && (*text < '0' || *text > '9')) ++text;
+  return text;
+}
 }  // namespace
 
 OtaUpdater::OtaUpdaterError OtaUpdater::checkForUpdate() {
@@ -84,8 +93,8 @@ bool OtaUpdater::isUpdateNewer() const {
   const auto currentVersion = CROSSPOINT_VERSION;
 
   // semantic version check (only match on 3 segments)
-  sscanf(latestVersion.c_str(), "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
-  sscanf(currentVersion, "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
+  sscanf(versionDigits(latestVersion.c_str()), "%d.%d.%d", &latestMajor, &latestMinor, &latestPatch);
+  sscanf(versionDigits(currentVersion), "%d.%d.%d", &currentMajor, &currentMinor, &currentPatch);
 
   /*
    * Compare major versions.
