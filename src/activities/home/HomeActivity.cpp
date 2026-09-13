@@ -19,6 +19,7 @@
 #include "MappedInputManager.h"
 #include "OpdsServerStore.h"
 #include "RecentBooksStore.h"
+#include "activities/chess/ChessActivity.h"
 #include "components/UITheme.h"
 #include "fontIds.h"
 
@@ -29,6 +30,9 @@ int HomeActivity::getMenuItemCount() const {
   }
   if (hasOpdsServers) {
     count++;
+  }
+  if (BoardConfig::hasTouch()) {
+    count++;  // Chess
   }
   return count;
 }
@@ -191,6 +195,9 @@ void HomeActivity::loop() {
       case HomeMenuItem::FILE_TRANSFER:
         onFileTransferOpen();
         break;
+      case HomeMenuItem::CHESS:
+        onChessOpen();
+        break;
       case HomeMenuItem::SETTINGS_MENU:
         onSettingsOpen();
         break;
@@ -316,6 +323,11 @@ void HomeActivity::render(RenderLock&&) {
     menuIcons.insert(menuIcons.begin() + 2, Library);
   }
 
+  if (BoardConfig::hasTouch()) {
+    menuItems.insert(menuItems.end() - 1, tr(STR_CHESS));
+    menuIcons.insert(menuIcons.end() - 1, Library);
+  }
+
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {
     // Insert Continue Reading at the top if enabled in theme
     menuItems.insert(menuItems.begin(), tr(STR_CONTINUE_READING));
@@ -354,6 +366,10 @@ void HomeActivity::onFileBrowserOpen() { activityManager.goToFileBrowser(); }
 void HomeActivity::onRecentsOpen() { activityManager.goToRecentBooks(); }
 
 void HomeActivity::onSettingsOpen() { activityManager.goToSettings(); }
+
+void HomeActivity::onChessOpen() {
+  activityManager.pushActivity(std::make_unique<ChessActivity>(renderer, mappedInput));
+}
 
 void HomeActivity::onFileTransferOpen() { activityManager.goToFileTransfer(); }
 

@@ -290,4 +290,33 @@ Want to build your own device? Be sure to check out the [de-link](https://github
 
 ---
 
+## crosscheck
+
+This fork adds a Lichess app for the Xteink X4 Pro. See [docs/crosscheck-spec.md](docs/crosscheck-spec.md) and [docs/crosscheck-dev-notes.md](docs/crosscheck-dev-notes.md).
+
+What it does:
+
+- Play rated or casual games against people from open seeks (rapid and classical), or challenge a player by name at any time control.
+- Play the Lichess engine at levels 1 to 8.
+- Live clocks, premoves, move history, material count, and the rating change at the end of a game.
+- Review your recent games.
+- Solve Lichess puzzles offline: download them by theme, hundreds at a time, and your results go to Lichess the next time the device connects.
+- Read Lichess studies offline: annotated games and opening lines with comments, variations, and arrows, plus a practice mode that hides the next move.
+- Play a local two-player game with no network.
+
+### Getting a study onto the device
+
+Studies are documents that Lichess users publish. The recommended path needs no typing on the device:
+
+1. On lichess.org or in the Lichess app, open the study you want and choose **Clone** in its menu. The copy becomes one of your studies.
+2. On the device, open the Studies tab and tap **My studies**. The clone appears. Tap it, and it downloads to the SD card. From then on it opens offline.
+
+Clones are private by default, so the token needs the `study:read` scope (the prefilled link below includes it). Two other ways in: **By user** lists another player's public studies (`lichess` has hundreds of annotated tournament games and puzzle packs), and **Open by ID** takes a study id or link. Lichess has no API for liked or bookmarked studies, so a like on the website does not reach the device.
+
+Setup: create a personal API token with [this prefilled link](https://lichess.org/account/oauth/token/create?scopes[]=board:play&scopes[]=challenge:write&scopes[]=challenge:read&scopes[]=puzzle:read&scopes[]=puzzle:write&scopes[]=study:read&scopes[]=follow:read&description=crosscheck+X4+Pro), which ticks every scope the app uses (`board:play`, `challenge:write`, `challenge:read`, `puzzle:read`, `puzzle:write`, `study:read`, `follow:read`). The device shows the same link as a QR code until a token is entered. Then enter the token on the device or put it in `/.crosspoint/lichess/lichess.json` on the SD card as `{ "token": "..." }` (the device rewrites it in obfuscated form as `token_obf`; a plain `token` field always wins). The account row on the Play tab changes or removes the token later. Wi-Fi is on only while the app is open.
+
+The chess piece images come from the Lichess "cburnett" set by Colin M.L. Burnett, licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
+
+---
+
 CrossPoint Reader is **not affiliated with Xteink or any device manufacturer**.

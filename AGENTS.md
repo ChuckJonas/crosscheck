@@ -1028,3 +1028,25 @@ struct PageLine {
 ---
 
 Philosophy: We are building a dedicated e-reader, not a Swiss Army knife. If a feature adds RAM pressure without significantly improving the reading experience, it is Out of Scope.
+
+---
+
+## crosscheck
+
+This fork adds a "Chess" activity that plays live games on Lichess. The full specification is in [docs/crosscheck-spec.md](docs/crosscheck-spec.md). Read it before you change chess code.
+
+**Reference files**
+
+- `docs/contributing/*.md`: build, workflow, and test guides.
+- `docs/contributing/touch-and-ui.md`: mandatory UI conventions for touch screens.
+- `src/activities/reader/KOReaderSyncActivity.cpp`: Wi-Fi lifecycle reference.
+- `src/network/HttpDownloader.cpp` and `lib/KOReaderSync/KOReaderSyncClient.cpp`: streaming HTTPS and ArduinoJson references.
+
+**Standing rules**
+
+- Put all new chess code under `src/activities/chess/` and `lib/Chess/`.
+- Do not change `lib/Epub` or `src/activities/reader/*`. Read `KOReaderSyncActivity.cpp` only as a reference.
+- Put all Wi-Fi calls in `ChessActivity` only.
+- Keep `lib/Chess/` free of Arduino and display includes so it builds in the native test environment.
+- Run `pio run -e x4pro` before you claim that a change compiles.
+- Keep the diff to upstream files under about 30 lines. Touch upstream files only at the menu registration point, `platformio.ini`, and the translations table.
