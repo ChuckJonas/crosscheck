@@ -618,10 +618,11 @@ void ChessStudyActivity::loop() {
     }
     const auto swipe = mappedInput.wasSwipe();
     if (state == State::Reading || state == State::Text) {
-      const bool prev = swipe == MappedInputManager::SwipeDir::Left ||
+      // A swipe turns pages: left goes forward through the moves, right goes back.
+      const bool prev = swipe == MappedInputManager::SwipeDir::Right ||
                         mappedInput.wasReleased(MappedInputManager::Button::Left) ||
                         mappedInput.wasReleased(MappedInputManager::Button::PageBack);
-      const bool next = swipe == MappedInputManager::SwipeDir::Right ||
+      const bool next = swipe == MappedInputManager::SwipeDir::Left ||
                         mappedInput.wasReleased(MappedInputManager::Button::Right) ||
                         mappedInput.wasReleased(MappedInputManager::Button::PageForward);
       if (prev) {

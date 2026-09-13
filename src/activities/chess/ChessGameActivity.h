@@ -125,8 +125,22 @@ class ChessGameActivity final : public Activity {
   int shownPly() const;
   void jumpToJudged(int direction);
   void drawAnalysis(int y);
-  // The request-analysis code is up over the board until a tap.
+  // The evaluation chart under the status lines: a tap jumps to that ply.
+  static constexpr int ANALYSIS_SQUARE = 52;
+  int chartX = 0;
+  int chartY = 0;
+  int chartW = 0;
+  int chartH = 0;
+  void drawEvalChart();
+  bool tapChart(int tx, int ty);
+  // The request-analysis code is up over the board until a tap. Its button
+  // asks Lichess for the analysis without leaving the game.
   bool showQr = false;
+  bool analysisPending = false;
+  char analysisNote[80] = {};
+  int qrButtonY = 0;
+  int qrButtonH = 0;
+  void checkForAnalysis();
   // A move chosen during the opponent's turn, sent as soon as it is legal.
   chess::Move premove;
 

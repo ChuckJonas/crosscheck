@@ -63,18 +63,19 @@ void ChessBoardView::drawPiece(const GfxRenderer& renderer, Piece piece, int sx,
     }
     return;
   }
-  // Fallback for other square sizes: a letter on a disc.
-  static constexpr char LETTERS[] = " PNBRQK";
-  const char letter[2] = {LETTERS[type], '\0'};
-  const int radius = squarePx / 2 - 6;
-  const int cx = sx + squarePx / 2;
-  const int cy = sy + squarePx / 2;
-  renderer.fillRoundedRect(cx - radius, cy - radius, radius * 2, radius * 2, radius, white ? White : Black);
-  if (white) renderer.drawRoundedRect(cx - radius, cy - radius, radius * 2, radius * 2, 2, radius, true);
-  const int fontId = NOTOSANS_18_FONT_ID;
-  const int tw = renderer.getTextWidth(fontId, letter, EpdFontFamily::BOLD);
-  const int th = renderer.getTextHeight(fontId);
-  renderer.drawText(fontId, cx - tw / 2, cy - th / 2, letter, white, EpdFontFamily::BOLD);
+  // Other square sizes sample the same bitmaps, nearest neighbour.
+  const uint8_t* shape = white ? chesspieces::WHITE_SHAPE[type] : chesspieces::BLACK_SHAPE[type];
+  const uint8_t* ink = white ? chesspieces::WHITE_INK[type] : chesspieces::BLACK_INK[type];
+  for (int y = 0; y < squarePx; ++y) {
+    const int srcY = y * chesspieces::SIZE / squarePx;
+    for (int x = 0; x < squarePx; ++x) {
+      const int srcX = x * chesspieces::SIZE / squarePx;
+      const int i = srcY * chesspieces::SIZE + srcX;
+      const uint8_t bit = 0x80 >> (i & 7);
+      if (!(shape[i >> 3] & bit)) continue;
+      renderer.drawPixel(sx + x, sy + y, (ink[i >> 3] & bit) != 0);
+    }
+  }
 }
 
 void ChessBoardView::draw(const GfxRenderer& renderer, const Position& position, const Marks& marks) const {

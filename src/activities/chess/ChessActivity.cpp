@@ -846,7 +846,16 @@ void ChessActivity::startReview(int index, std::vector<lichess::AnalysisPly> ana
   app.clearTapFlash();
   startActivityForResult(
       std::make_unique<ChessGameActivity>(renderer, mappedInput, recent[index], std::move(uci), std::move(analysis)),
-      [this](const ActivityResult&) { requestUpdate(); });
+      [this, index](const ActivityResult& result) {
+        RenderLock lock;
+        // The review fetched the analysis itself: the row shows it now.
+        if (!result.isCancelled && std::holds_alternative<KeyboardResult>(result.data) &&
+            std::get<KeyboardResult>(result.data).text == "analysed" && index < static_cast<int>(recent.size())) {
+          recent[index].analysed = true;
+          rebuildRecentRows();
+        }
+        requestUpdate();
+      });
 }
 
 // --- studies -----------------------------------------------------------------

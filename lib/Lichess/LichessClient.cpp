@@ -648,7 +648,7 @@ void LichessClient::runCommand(freeink::SecureHttpClient& http, const Command& c
     case Cmd::FetchRecentGames: {
       // One NDJSON line per game, parsed as it arrives so no whole-body buffer
       // is needed; long games would otherwise overflow it.
-      char path[96];
+      char path[160];
       snprintf(path, sizeof(path), "/api/games/user/%s?max=%d&moves=true&opening=false&clocks=false", userId.c_str(),
                c.level);
       std::vector<lichess::GameSummary> parsed;
@@ -680,7 +680,9 @@ void LichessClient::runCommand(freeink::SecureHttpClient& http, const Command& c
         };
         const int st = http.sendRequest("GET", nullptr, 0, onIds, shouldAbort);
         ids.flush();
-        LOG_DBG("LICHESS", "Analysed list -> %d", st);
+        int tagged = 0;
+        for (const auto& g : parsed) tagged += g.analysed ? 1 : 0;
+        LOG_INF("LICHESS", "Analysed list -> %d, %d of %d games tagged", st, tagged, static_cast<int>(parsed.size()));
       }
       const int count = static_cast<int>(parsed.size());
       {

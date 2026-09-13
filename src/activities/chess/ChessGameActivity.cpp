@@ -159,7 +159,9 @@ void ChessGameActivity::layoutBoard() {
   const int top = safe.y + metrics.topPadding + metrics.headerHeight + CLOCK_ROW_HEIGHT;
   const int availableHeight = safe.y + safe.height - top - CLOCK_ROW_HEIGHT - BAR_HEIGHT;
   const int side = safe.width < availableHeight ? safe.width : availableHeight;
-  const int squareSize = side / 8;
+  int squareSize = side / 8;
+  // With analysis the chart needs the room under the board.
+  if (review && !analysis.empty() && squareSize > ANALYSIS_SQUARE) squareSize = ANALYSIS_SQUARE;
   const int x = safe.x + (safe.width - squareSize * 8) / 2;
   board.setLayout(x, top, squareSize);
 }
@@ -730,9 +732,40 @@ void ChessGameActivity::applySnapshot() {
   requestUpdate();
 }
 
+void ChessGameActivity::checkForAnalysis() {
+  if (analysisPending) return;
+  if (!LICHESS.running() || !LICHESS.fetchAnalysis(gameId)) {
+    snprintf(analysisNote, sizeof(analysisNote), "%s", tr(STR_CHESS_OFFLINE));
+    requestUpdate();
+    return;
+  }
+  analysisPending = true;
+  snprintf(analysisNote, sizeof(analysisNote), "%s", tr(STR_CHESS_CHECKING_ANALYSIS));
+  requestUpdate();
+}
+
 void ChessGameActivity::handleClientEvents() {
   LichessClient::Event ev;
   while (LICHESS.pollEvent(ev)) {
+    if (review) {
+      // Only the analysis reply matters here; the lobby owns everything else.
+      if (ev.type == LichessClient::EventType::AnalysisReady && strcmp(ev.gameId, gameId) == 0) {
+        LICHESS.copyAnalysis(analysis);
+        analysisPending = false;
+        if (!analysis.empty()) {
+          setResult(KeyboardResult{"analysed"});  // the lobby tags the row
+          showQr = false;
+          layoutBoard();
+          forceFullRefresh = true;
+        }
+        requestUpdate();
+      } else if (ev.type == LichessClient::EventType::AnalysisFailed) {
+        analysisPending = false;
+        snprintf(analysisNote, sizeof(analysisNote), "%s", tr(STR_CHESS_NO_ANALYSIS_YET));
+        requestUpdate();
+      }
+      continue;
+    }
     switch (ev.type) {
       case LichessClient::EventType::GameUpdated:
         applySnapshot();
@@ -820,10 +853,10 @@ void ChessGameActivity::captureInput() {
   in.back = mappedInput.wasReleased(MappedInputManager::Button::Back);
   in.menu = mappedInput.wasMenuGesture() || mappedInput.wasReleased(MappedInputManager::Button::Confirm);
   const auto swipe = mappedInput.wasSwipe();
-  in.prev = swipe == MappedInputManager::SwipeDir::Left || mappedInput.wasReleased(MappedInputManager::Button::Left) ||
+  // A swipe turns pages: left goes forward through the moves, right goes back.
+  in.prev = swipe == MappedInputManager::SwipeDir::Right || mappedInput.wasReleased(MappedInputManager::Button::Left) ||
             mappedInput.wasReleased(MappedInputManager::Button::PageBack);
-  in.next = swipe == MappedInputManager::SwipeDir::Right ||
-            mappedInput.wasReleased(MappedInputManager::Button::Right) ||
+  in.next = swipe == MappedInputManager::SwipeDir::Left || mappedInput.wasReleased(MappedInputManager::Button::Right) ||
             mappedInput.wasReleased(MappedInputManager::Button::PageForward);
   if (!(in.tap || in.back || in.menu || in.prev || in.next)) return;
   if (pendingCount < PENDING_MAX) pending[pendingCount++] = in;
@@ -856,7 +889,11 @@ void ChessGameActivity::applyPending() {
       return;  // the popup takes the input from here
     }
     if (showQr) {
-      // Any input puts the code away.
+      // The button asks for the analysis; any other input puts the code away.
+      if (in.tap && in.ty >= qrButtonY && in.ty < qrButtonY + qrButtonH) {
+        checkForAnalysis();
+        continue;
+      }
       showQr = false;
       forceFullRefresh = true;
       requestUpdate();
@@ -868,6 +905,8 @@ void ChessGameActivity::applyPending() {
       const Square square = board.squareAt(in.tx, in.ty);
       if (square != NoSquare) {
         onSquareTapped(square);
+      } else if (review && tapChart(in.tx, in.ty)) {
+        // jumped to the tapped ply
       } else if (!tapActionBar(in.tx, in.ty) && in.ty > board.y() + board.size() + CLOCK_ROW_HEIGHT) {
         openMenu();
         requestUpdate();
@@ -907,7 +946,7 @@ void ChessGameActivity::loop() {
   captureInput();
   if (RenderLock::peek()) return;  // a refresh is running; keep polling input
   RenderLock lock;
-  if (online) handleClientEvents();
+  if (online || (review && analysisPending)) handleClientEvents();
   if (puzzle && replyAt && millis() >= replyAt) {
     replyAt = 0;
     playSolutionMove();
@@ -1087,21 +1126,67 @@ void ChessGameActivity::drawAnalysis(int y) {
     snprintf(line, sizeof(line), "%s", eval);
   }
   renderer.drawCenteredText(UI_12_FONT_ID, y, line, true);
-  const int barY = y + renderer.getLineHeight(UI_12_FONT_ID) + 4;
-  const int w = board.size();
-  const int x = board.x();
-  int share = 500;  // White's share in thousandths
-  if (a->mate != 0) {
-    share = a->mate > 0 ? 1000 : 0;
+  // The chart fills what is left above the action bar.
+  chartX = board.x();
+  chartW = board.size();
+  chartY = y + renderer.getLineHeight(UI_12_FONT_ID) + 6;
+  chartH = barY() - 8 - chartY;
+  if (chartH >= 40) {
+    drawEvalChart();
   } else {
-    int cp = a->cp;
-    if (cp > 500) cp = 500;
-    if (cp < -500) cp = -500;
-    share = 500 + cp;
+    chartH = 0;
   }
-  renderer.drawRect(x, barY, w, 10, 1, true);
-  const int blackW = (w - 2) * (1000 - share) / 1000;
-  if (blackW > 0) renderer.fillRect(x + 1 + (w - 2 - blackW), barY + 1, blackW, 8, true);
+}
+
+namespace {
+// The evaluation of a ply as a height in thousandths of the half chart,
+// positive for White; a mate counts as five pawns.
+int chartValue(const lichess::AnalysisPly& a) {
+  if (a.mate != 0) return a.mate > 0 ? 1000 : -1000;
+  int cp = a.cp;
+  if (cp > 500) cp = 500;
+  if (cp < -500) cp = -500;
+  return cp * 2;
+}
+}  // namespace
+
+void ChessGameActivity::drawEvalChart() {
+  // An evaluation bar over time: each column is white on top for White's
+  // share and black below, half and half when the game is level.
+  const int n = static_cast<int>(analysis.size());
+  if (n == 0 || chartW < 16) return;
+  const int x0 = chartX + 1;
+  const int innerW = chartW - 2;
+  const int innerH = chartH - 2;
+  renderer.drawRect(chartX, chartY, chartW, chartH, 1, true);
+  auto valueAt = [&](int ply) { return ply <= 0 ? 0 : chartValue(analysis[ply - 1]); };
+  for (int px = 0; px < innerW; ++px) {
+    // The ply at this column, with a straight line between plies.
+    const int num = px * n;
+    const int p = num / innerW;
+    const int frac = num % innerW;
+    const int v = valueAt(p) + (valueAt(p + 1 > n ? n : p + 1) - valueAt(p)) * frac / innerW;
+    const int whiteH = innerH * (1000 + v) / 2000;  // v is -1000..1000
+    if (whiteH < innerH) renderer.fillRect(x0 + px, chartY + 1 + whiteH, 1, innerH - whiteH, true);
+  }
+  // The shown ply: a two-tone line that shows on both areas.
+  const int shown = shownPly();
+  if (shown >= 0 && shown <= n) {
+    const int cx = x0 + shown * (innerW - 1) / n;
+    renderer.fillRect(cx, chartY + 1, 1, innerH, false);
+    renderer.fillRect(cx + 1, chartY + 1, 1, innerH, true);
+  }
+}
+
+bool ChessGameActivity::tapChart(int tx, int ty) {
+  const int n = static_cast<int>(analysis.size());
+  if (chartH == 0 || n == 0) return false;
+  if (tx < chartX || tx >= chartX + chartW || ty < chartY || ty >= chartY + chartH) return false;
+  int ply = ((tx - chartX - 1) * n + (chartW - 2) / 2) / (chartW - 2);
+  if (ply < 0) ply = 0;
+  if (ply > n) ply = n;
+  showPly(ply);
+  return true;
 }
 
 void ChessGameActivity::drawStatusLine() {
@@ -1258,7 +1343,7 @@ void ChessGameActivity::render(RenderLock&&) {
     }
     if (showQr) {
       // The game page on Lichess, where computer analysis is one tap away.
-      const int size = 260;
+      const int size = board.size() >= 460 ? 260 : 220;
       const int qx = board.x() + (board.size() - size) / 2;
       const int qy = board.y() + 20;
       renderer.fillRect(board.x(), board.y(), board.size(), board.size(), false);
@@ -1273,6 +1358,16 @@ void ChessGameActivity::render(RenderLock&&) {
         renderer.drawCenteredText(UI_10_FONT_ID, ty, l.c_str(), true);
         ty += renderer.getLineHeight(UI_10_FONT_ID);
       }
+      // The check button, then the last answer under it.
+      qrButtonY = ty + 8;
+      qrButtonH = BAR_HEIGHT;
+      const int bw = board.size() - 80;
+      const int bx = board.x() + 40;
+      renderer.drawRoundedRect(bx, qrButtonY, bw, BAR_HEIGHT, 2, 8, true);
+      const char* label = tr(STR_CHESS_CHECK_ANALYSIS);
+      renderer.drawText(UI_12_FONT_ID, bx + (bw - renderer.getTextWidth(UI_12_FONT_ID, label)) / 2,
+                        qrButtonY + (BAR_HEIGHT - renderer.getTextHeight(UI_12_FONT_ID)) / 2, label, true);
+      if (analysisNote[0]) renderer.drawCenteredText(UI_10_FONT_ID, qrButtonY + BAR_HEIGHT + 6, analysisNote, true);
     }
     drawStatusLine();
   }
