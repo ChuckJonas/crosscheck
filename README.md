@@ -1,330 +1,75 @@
-# CrossPoint Reader
+# crosscheck
 
-[![Fund contributors](https://img.shields.io/badge/%F0%9F%91%91_Fund_contributors-royalty.dev-BB953A?style=for-the-badge&labelColor=1a1a1a)](https://app.royalty.dev/crosspoint-reader/crosspoint-reader)
+A Lichess client for the Xteink X4 Pro e-reader. Play, review, solve puzzles, and read studies on an e-ink screen that runs for days.
 
-CrossPoint is open-source e-reader firmware - community-built, fully hackable, free forever. It's maintained by a growing community of developers and readers who believe your device should do what you want - not what a manufacturer decided for you.
+crosscheck is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader), the open-source e-reader firmware. Everything about reading books, the device, Wi-Fi setup, fonts, and file transfer is CrossPoint's and is documented there. This README covers the Lichess app only.
 
-### Now running on:
-- **ESP32C3-based** Xteink X4 and X3.
-- **ESP32S3-based** Xteink X4Pro, Seeed reTerminal Sticky, M5PaperMono
+## What it does
 
-Check [our Devices page](https://crosspointreader.com/devices) for the full list.
+**Play**
 
-![CrossPoint Reader running on Xteink device](./docs/images/cover.jpg)
+- Rated or casual games against people from open seeks, rapid and classical.
+- Challenges to the players you follow, or to anyone by name, at any time control.
+- Games against the Lichess engine at levels 1 to 8.
+- Live clocks, premoves, move history, material count, draw and resign, and the rating change at the end.
+- A local two-player game on one device, no network.
 
-> If you're planning to buy an Xteink device, consider purchasing an **X3/X4 Developer Edition** through https://crosspointreader.com. CrossPoint receives a small share of each sale, helping fund development costs.
+**Games**
 
-## What can CrossPoint do?
+- Your recent games with a move browser.
+- Computer analysis when Lichess has it: an evaluation chart you can tap to jump to a move, the judgments of each move, the better move drawn on the board, and jumps between mistakes.
 
-- **Reader engine**: EPUB 2/3 rendering with embedded-style option, image handling, hyphenation, kerning, adaptive table layouts, native CJK ruby annotations, chapter navigation, footnotes, bookmarks, dictionary lookups ([StarDict](docs/dictionary.md)), go-to-percent, auto page turn, orientation control, focus reading, KOReader progress sync and more.
+**Puzzles**
 
-- **Various formats**: native handling for `.epub`, `.xtc/.xtch`, `.txt`, and `.bmp`.
+- Hundreds of puzzles stored on the SD card, solved offline.
+- Any set of themes at once, with counts of what is on the card.
+- Results go to Lichess the next time the device connects, and your 30-day results by theme are one tap away.
 
-- **Touch reading**: follow EPUB links and look up words in the dictionary on touch-enabled devices.
+**Studies**
 
-- **Screenshots.**
+- Lichess studies saved on the SD card: annotated games and opening lines with comments, variations, and arrows.
+- A reading page for the commentary of each move, and a practice mode that hides the next move.
 
-- **Custom fonts**: install your favorite fonts on the SD card.
+The lobby works offline. Anything that needs Lichess connects on its own when you tap it.
 
-- **Tilt page turn (X3 and Sticky)**.
+## Install
 
-- **USB Drive mode (X4Pro)**: access the SD card as USB mass storage.
+1. Download `firmware-x4pro.bin` from the [latest release](https://github.com/ChuckJonas/crosscheck/releases/latest).
+2. Open https://crosspointreader.com/#flash-tools, select Xteink X4Pro, click **Custom .bin**, and upload the file. CrossPoint's note about USB-locked devices applies.
+3. Updates arrive on the device: Settings → Check for updates reads crosscheck's releases, not CrossPoint's, so it never offers to replace crosscheck with stock firmware.
 
-- **Library workflow**: folder browser, hidden-file toggle, long-press delete, recent books, SD-cache management.
+Only the X4 Pro is supported. The app needs a touch screen.
 
-- **Wireless workflows**:
-  
-  - File transfer web UI
-  - EPUB Optimizer
-  - Web settings UI/API (edit many device settings from browser)
-  - WebSocket fast uploads
-  - WebDAV handler
-  - AP mode (hotspot) and STA mode (join existing Wi-Fi), both with QR helpers
-  - Calibre wireless connect flow
-  - OPDS browser with saved servers (up to 8), search, pagination, and direct download
-  - OTA update checks and installs from GitHub releases
+## Setup
 
-- **Customization**: night mode, multiple themes (Classic, Lyra, Lyra Extended, RoundedRaff), sleep screen modes including transparent overlays, front/side button remapping, status bar controls, power-button behavior, refresh cadence, and more.
+1. Create a Lichess API token with [this prefilled link](https://lichess.org/account/oauth/token/create?scopes[]=board:play&scopes[]=challenge:write&scopes[]=challenge:read&scopes[]=puzzle:read&scopes[]=puzzle:write&scopes[]=study:read&scopes[]=follow:read&description=crosscheck+X4+Pro). It ticks every scope the app uses: `board:play`, `challenge:write`, `challenge:read`, `puzzle:read`, `puzzle:write`, `study:read`, `follow:read`. The device shows the same link as a QR code until a token is stored.
+2. Enter the token on the device, or put it on the SD card in `/.crosspoint/lichess/lichess.json` as `{ "token": "..." }`. The device rewrites the file with the token scrambled as `token_obf`; a plain `token` field always wins.
+3. To change or remove the token later, tap the header where the account name shows.
 
-- **Localization**: 34 UI languages and counting, including CJK font fallback and RTL support.
+## Using it
 
-### Coming soon:
+**Play** has four sub-tabs. *Match* lists your ongoing games and the seek cards, with the Rated switch above them. *Computer* has the engine cards; the level is asked after the card. *Challenge* lists the players you follow, online ones first, with Type a name for anyone else. *Local* starts a game on the device.
 
-- More themes.
+**Games** tags the games that have computer analysis. Open one and the evaluation chart appears under the board. For a game without analysis, the menu's Request analysis shows a QR code of the game on Lichess, where the request is one tap; Check for analysis under the code then loads it into the open review.
 
-- Web plugins.
+**Puzzles** downloads in batches of 30, as many as you ask for, up to 500 on the card. Themes picks any number of themes; the tab tells you how many saved puzzles match. Next puzzle draws from the matching ones and downloads when nothing matches. Your results shows the weakest themes first.
 
-- Bluetooth pageturner.
+**Studies** are documents Lichess users publish. To get one onto the device without typing: open it on lichess.org or in the Lichess app, choose **Clone**, then tap **My studies** on the device and tap the clone. It downloads to the card and opens offline from then on. Clones are private, which is what `study:read` is for. **By user** lists another player's public studies (`lichess` has hundreds of annotated tournament games and puzzle packs), and **Open by ID** takes a study id or link. In a chapter, tap the comment preview to read the full commentary of that move; the menu has Practice, which hides the next move and checks yours.
 
-- Much more! stay tuned.
+## What the Lichess API does not allow
 
----
+- Blitz and bullet seeks. Lichess keeps those pools for its own clients. Blitz works against the engine and in challenges to a friend.
+- Requesting computer analysis. It takes one tap on the website, and the QR code gets you there.
+- Liked or bookmarked studies. Clone is the workaround.
 
-## USB-locked devices (Xteink Unlocker)
+## Development
 
-Some Xteink units purchased from third-party stores (e.g. AliExpress) ship with USB flashing locked from the factory.
-If your device is locked, you will need to use the **Xteink Unlocker** tool available at
-https://crosspointreader.com/#unlock-tool before you can flash CrossPoint.
+Build with `pio run -e x4pro` and flash with `pio run -e x4pro -t upload`. The native tests for the move generator, the Lichess protocol, and the PGN parser run with `cmake -S test -B build && cmake --build build && ctest --test-dir build`.
 
-**You do not need this tool if you bought your device directly from xteink.com.** Those units are not locked.
+The app lives in `src/activities/chess/`, `lib/Chess/`, and `lib/Lichess/`. [docs/crosscheck-dev-notes.md](docs/crosscheck-dev-notes.md) explains the architecture, the Lichess and display findings that shaped it, the release steps, and a QA checklist. [docs/crosscheck-spec.md](docs/crosscheck-spec.md) is the original plan. CrossPoint's own development guide is in [AGENTS.md](AGENTS.md) and `docs/contributing/`.
 
-**Not sure if your device is locked?** Power it on, connect the USB-C cable, and try flashing via the web flasher first (see
-[Install firmware](#install-firmware) below). If the browser's serial device picker does not show your device, try a different
-USB port or browser before assuming the device is locked. Only reach for the unlocker if the device still doesn't appear.
+A release is a tag `crosscheck-vX.Y.Z` after setting the same value in `platformio.ini`; the workflow builds the firmware and publishes it.
 
-> ### ⚠️ WARNING: READ THIS BEFORE USING THE UNLOCKER ⚠️
-> 
-> **The only officially supported firmwares in the unlock tool are CrossPoint and CrossInk.**
-> 
-> Flashing any other firmware on a USB-locked device may **permanently brick the device** or leave it **permanently
-> stuck on that firmware with no recovery path**. Once USB flashing is re-locked, your only way back is via OTA, and if
-> the firmware you flashed doesn't support OTA, **there is no way out**.
+## Credits
 
-## Install firmware
-
-### Web installer (recommended)
-
-1. Connect your device to your computer via USB-C and wake/unlock the device
-2. Go to https://crosspointreader.com/#flash-tools, select your device (X3, X4, Xteink X4Pro, Seeed reTerminal Sticky, or M5PaperMono), and choose an official CrossPoint release.
-
-### Web installer (specific version)
-
-1. Connect your device to your computer via USB-C and wake/unlock the device
-2. Download the firmware file for your device from [Releases](https://github.com/crosspoint-reader/crosspoint-reader/releases), or compile yourself.
-3. Go to https://crosspointreader.com/#flash-tools, select your device, click "Custom .bin" and upload the firmware file.
-
-### Revert to Official Firmware
-
-To revert to the official firmware, you can also flash the latest official firmware using https://crosspointreader.com/#flash-tools.
-
-### Command line
-
-1. Install [`esptool`](https://github.com/espressif/esptool):
-
-```bash
-pip install esptool
-```
-
-2. Download the firmware file for your device from the [releases page](https://github.com/crosspoint-reader/crosspoint-reader/releases).
-3. Connect your device via USB-C.
-4. Find the device port. On Linux, run `dmesg` after connecting. On macOS:
-
-```bash
-log stream --predicate 'subsystem == "com.apple.iokit"' --info
-```
-
-5. Flash an X3 or X4:
-
-```bash
-esptool.py --chip esp32c3 --port /dev/ttyACM0 --baud 921600 write_flash 0x10000 /path/to/firmware.bin
-```
-
-   Flash an Xteink X4Pro, Seeed reTerminal Sticky, or M5PaperMono:
-
-```bash
-esptool.py --chip esp32s3 --port /dev/ttyACM0 --baud 921600 write_flash 0x10000 /path/to/firmware.bin
-```
-
-### Manual
-
-See [Development quick start](#development-quick-start) below.
-
----
-
-## Custom SD-card fonts
-
-Convert your own TTF/OTF files into `.cpfont` files that load from the SD card. No firmware reflash is needed.
-
-1. Go to https://crosspointreader.com/fonts and open the "SD-card font builder" form.
-2. Upload up to four styles (regular, bold, italic, bold-italic), set the family name, point sizes, and Unicode range.
-3. Download the generated `.cpfont` files.
-4. Copy them to your SD card under `/fonts/YourFont/` (or `/.fonts/YourFont/` to hide the folder).
-5. Select the font on the device from the font settings.
-
-Conversion runs the firmware repo's `lib/EpdFont/scripts/fontconvert_sdcard.py` script unmodified, so output matches a local host build.
-
----
-
-## Documentation
-
-- [User Guide](./USER_GUIDE.md)
-- [Web server usage](./docs/webserver.md)
-- [Web server endpoints](./docs/webserver-endpoints.md)
-- [Project scope](./SCOPE.md)
-- [Contributing docs](./docs/contributing/README.md)
-- [Touch and UI development](./docs/contributing/touch-and-ui.md) - how to build new screens on the FreeInkUI activity bases (UiListActivity and friends), plus build envs for the non-Xteink touch devices
-
----
-
-## Development quick start
-
-### Prerequisites
-
-- [pioarduino PlatformIO Core](https://github.com/pioarduino/platformio-core) or [VS Code + pioarduino IDE](https://github.com/pioarduino/pioarduino-vscode-ide)
-- Python 3.8+
-- `clang-format` 21
-- USB-C cable supporting data transfer
-
-### Setup
-
-```bash
-git clone --recursive https://github.com/crosspoint-reader/crosspoint-reader
-cd crosspoint-reader
-
-# if cloned without --recursive:
-git submodule update --init --recursive
-```
-
-### Nix/NixOS
-
-Nix/NixOS users can enter the development shell with either `nix develop` (flakes) or `nix-shell`:
-
-```bash
-nix develop -f nix
-# or
-nix-shell nix
-```
-
-To flash a connected ESP32-C3 device, enable PlatformIO's udev rules in your NixOS configuration:
-
-```nix
-services.udev.packages = with pkgs; [ platformio-core.udev ];
-```
-
-After rebuilding the system configuration, reconnect the device or reload udev rules.
-
-### Build / flash / monitor
-
-```bash
-pio run --target upload
-```
-
-### Contributor pre-PR checks
-
-```bash
-./bin/clang-format-fix
-pio check -e default
-pio run -e default
-```
-
-### Debugging
-
-After flashing the new features, it’s recommended to capture detailed logs from the serial port.
-
-First, make sure all required Python packages are installed:
-
-```python
-python3 -m pip install pyserial colorama matplotlib
-```
-
-After that run the script:
-
-```sh
-# For Linux
-# This was tested on Debian and should work on most Linux systems.
-python3 scripts/debugging_monitor.py
-
-# For macOS
-python3 scripts/debugging_monitor.py /dev/cu.usbmodem2101
-```
-
-Minor adjustments may be required for Windows.
-
----
-
-## Internals
-
-CrossPoint Reader is pretty aggressive about caching data down to the SD card to minimise RAM usage. The ESP32-C3 only has ~380KB of usable RAM, so we have to be careful. A lot of the decisions made in the design of the firmware were based on this constraint.
-
-### Data caching
-
-The first time chapters of a book are loaded, they are cached to the SD card. Subsequent loads are served from the
-cache. This cache directory exists at `.crosspoint` on the SD card. The structure is as follows:
-
-```text
-.crosspoint/
-├── epub_<hash>/         # one directory per book, named by content hash
-│   ├── progress.bin     # reading position (chapter, page, etc.)
-│   ├── cover.bmp        # generated cover image
-│   ├── book.bin         # metadata: title, author, spine, TOC
-│   ├── css_rules.cache  # parsed CSS rule cache
-│   ├── img_*            # rendered image cache files
-│   └── sections/        # per-chapter layout cache
-│       ├── 0.bin
-│       ├── 1.bin
-│       └── ...
-├── settings.json        # device settings
-├── state.json           # resume/runtime state
-└── recent.json          # recent books list
-```
-
-Removing `/.crosspoint` clears all cached metadata and forces a full regeneration on next open. Book deletes, overwrites, and moves done through the firmware or web UI clear or re-key matching caches; manual SD-card edits may leave stale cache directories behind.
-
-For more details on the internal file structures, see the [file formats document](./docs/file-formats.md).
-
----
-
-## Contributing
-
-Contributions are welcome. If you're new to the codebase, start with the [contributing docs](./docs/contributing/README.md). For things to work on, check the [ideas discussion board](https://github.com/crosspoint-reader/crosspoint-reader/discussions/categories/ideas) — leave a comment before starting so we don't duplicate effort.
-
-Everyone here is a volunteer, so please be respectful and patient. For governance and community expectations, see [GOVERNANCE.md](./GOVERNANCE.md).
-
----
-
-## Community forks
-
-One of the best things about open source is that anyone can take the code in a different direction. If you need something outside CrossPoint's [scope](./SCOPE.md), check out the community forks:
-
-- [CrossInk](https://github.com/uxjulia/CrossInk) — UX focused with minimal reading stats and broader customizations for the reading experience.
-
-- [papyrix-reader](https://github.com/bigbag/papyrix-reader) — Adds FB2 and MD format support. Actively maintained with Arabic script support. Custom themes.
-
-- [inx](https://github.com/obijuankenobiii/inx) — Completely reimagines the user interface with tabbed navigation.
-
-- [Witch(hunt) Reader](https://github.com/jpirnay/witchhunt-reader) — More faithful CSS styling and background work for slightly snappier interaction. Weather information panel. Markdown support.
-
-**Note:** Many of these features will make their way into CrossPoint over time. Each project chooses its own priorities and tradeoffs.
-
-Want to build your own device? Be sure to check out the [de-link](https://github.com/iandchasse/de-link) project or [OnePage Reader](https://github.com/MoveCall/onepage-reader).
-
----
-
-## crosscheck
-
-This fork adds a Lichess app for the Xteink X4 Pro. See [docs/crosscheck-spec.md](docs/crosscheck-spec.md) and [docs/crosscheck-dev-notes.md](docs/crosscheck-dev-notes.md).
-
-What it does:
-
-- Play rated or casual games against people from open seeks (rapid and classical), or challenge a player by name at any time control.
-- Play the Lichess engine at levels 1 to 8.
-- Live clocks, premoves, move history, material count, and the rating change at the end of a game.
-- Review your recent games.
-- Solve Lichess puzzles offline: download them by theme, hundreds at a time, and your results go to Lichess the next time the device connects.
-- Read Lichess studies offline: annotated games and opening lines with comments, variations, and arrows, plus a practice mode that hides the next move.
-- Play a local two-player game with no network.
-
-### Install
-
-1. Download `firmware-x4pro.bin` from the [latest crosscheck release](https://github.com/ChuckJonas/crosscheck/releases/latest).
-2. Go to https://crosspointreader.com/#flash-tools, select Xteink X4Pro, click "Custom .bin", and upload the file. The USB-lock warning above applies here too.
-3. Later updates arrive on the device: Settings → Check for updates reads this fork's releases, not the CrossPoint ones, so it never offers to replace crosscheck with stock firmware.
-
-Only the X4 Pro is supported: the app needs a touch screen.
-
-### Getting a study onto the device
-
-Studies are documents that Lichess users publish. The recommended path needs no typing on the device:
-
-1. On lichess.org or in the Lichess app, open the study you want and choose **Clone** in its menu. The copy becomes one of your studies.
-2. On the device, open the Studies tab and tap **My studies**. The clone appears. Tap it, and it downloads to the SD card. From then on it opens offline.
-
-Clones are private by default, so the token needs the `study:read` scope (the prefilled link below includes it). Two other ways in: **By user** lists another player's public studies (`lichess` has hundreds of annotated tournament games and puzzle packs), and **Open by ID** takes a study id or link. Lichess has no API for liked or bookmarked studies, so a like on the website does not reach the device.
-
-Setup: create a personal API token with [this prefilled link](https://lichess.org/account/oauth/token/create?scopes[]=board:play&scopes[]=challenge:write&scopes[]=challenge:read&scopes[]=puzzle:read&scopes[]=puzzle:write&scopes[]=study:read&scopes[]=follow:read&description=crosscheck+X4+Pro), which ticks every scope the app uses (`board:play`, `challenge:write`, `challenge:read`, `puzzle:read`, `puzzle:write`, `study:read`, `follow:read`). The device shows the same link as a QR code until a token is entered. Then enter the token on the device or put it in `/.crosspoint/lichess/lichess.json` on the SD card as `{ "token": "..." }` (the device rewrites it in obfuscated form as `token_obf`; a plain `token` field always wins). The account row on the Play tab changes or removes the token later. Wi-Fi is on only while the app is open.
-
-The chess piece images come from the Lichess "cburnett" set by Colin M.L. Burnett, licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/).
-
----
-
-CrossPoint Reader is **not affiliated with Xteink or any device manufacturer**.
+Built on [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader). The chess piece images are the Lichess "cburnett" set by Colin M.L. Burnett, licensed under [CC BY-SA 3.0](https://creativecommons.org/licenses/by-sa/3.0/). Lichess is a free, open-source chess server; crosscheck is not affiliated with Lichess, Xteink, or any device manufacturer.

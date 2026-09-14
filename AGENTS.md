@@ -1033,7 +1033,7 @@ Philosophy: We are building a dedicated e-reader, not a Swiss Army knife. If a f
 
 ## crosscheck
 
-This fork adds a "Chess" activity that plays live games on Lichess. The full specification is in [docs/crosscheck-spec.md](docs/crosscheck-spec.md). Read it before you change chess code.
+This fork is crosscheck, a Lichess app for the Xteink X4 Pro: live games, game review with analysis, offline puzzles, and studies. [docs/crosscheck-dev-notes.md](docs/crosscheck-dev-notes.md) describes the architecture, the findings that shaped it, and the release steps; read it before you change chess code. [docs/crosscheck-spec.md](docs/crosscheck-spec.md) is the original plan.
 
 **Reference files**
 
