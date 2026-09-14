@@ -325,7 +325,7 @@ void HomeActivity::render(RenderLock&&) {
 
   if (BoardConfig::hasTouch()) {
     menuItems.insert(menuItems.end() - 1, tr(STR_CHESS));
-    menuIcons.insert(menuIcons.end() - 1, Library);
+    menuIcons.insert(menuIcons.end() - 1, Chess);
   }
 
   if (metrics.homeContinueReadingInMenu && !recentBooks.empty()) {

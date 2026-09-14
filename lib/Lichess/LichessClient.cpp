@@ -108,7 +108,6 @@ void LichessClient::end() {
     MutexLock lock(dataMutex);
     std::vector<lichess::GameSummary>().swap(recentGames);
     std::vector<lichess::OngoingGame>().swap(nowPlaying);
-    std::string().swap(puzzle.solution);
     std::string().swap(game.moves);
     std::vector<lichess::Puzzle>().swap(puzzleBatch);
     std::vector<lichess::StudyInfo>().swap(studies);
@@ -195,11 +194,8 @@ void LichessClient::stopStream() {
   restartSlot(gameSlot);
 }
 
-void LichessClient::onHeartbeat(void* ctx) { static_cast<LichessClient*>(ctx)->lastHeartbeatMs = millis(); }
-
 void LichessClient::onGameLine(void* ctx, const char* line, size_t len) {
   auto* self = static_cast<LichessClient*>(ctx);
-  self->lastHeartbeatMs = millis();
   lichess::GameLineKind kind;
   {
     MutexLock lock(self->dataMutex);
@@ -246,7 +242,6 @@ void LichessClient::onStudyLine(void* ctx, const char* line, size_t len) {
 
 void LichessClient::onEventLine(void* ctx, const char* line, size_t len) {
   auto* self = static_cast<LichessClient*>(ctx);
-  self->lastHeartbeatMs = millis();
   lichess::StreamEvent ev;
   if (!lichess::parseEventLine(line, len, ev)) return;
   switch (ev.kind) {
@@ -282,8 +277,7 @@ void LichessClient::runStreamOnce(StreamSlot& slot, const char* gameId) {
   std::string path = isGame ? std::string("/api/board/game/stream/") + gameId : "/api/stream/event";
   prepare(http, path, "application/x-ndjson");
   slot.splitter.reset();
-  slot.splitter.setCallbacks(this, isGame ? &onGameLine : &onEventLine, &onHeartbeat);
-  lastHeartbeatMs = millis();
+  slot.splitter.setCallbacks(this, isGame ? &onGameLine : &onEventLine, nullptr);
   const uint32_t myGeneration = slot.generation;
   const auto onData = [this, &slot](const uint8_t* data, size_t len) {
     slot.splitter.feed(data, len);
@@ -420,13 +414,6 @@ bool LichessClient::fetchRecentGames(int max) {
   Command c;
   c.cmd = Cmd::FetchRecentGames;
   c.level = static_cast<int16_t>(max);
-  return enqueue(c);
-}
-
-bool LichessClient::fetchPuzzle(const char* difficulty) {
-  Command c;
-  c.cmd = Cmd::FetchPuzzle;
-  lichess::copyStr(c.user, sizeof(c.user), difficulty ? difficulty : "normal");
   return enqueue(c);
 }
 
@@ -690,25 +677,6 @@ void LichessClient::runCommand(freeink::SecureHttpClient& http, const Command& c
         recentGames.swap(parsed);
       }
       postEvent(EventType::RecentGamesReady, count);
-      break;
-    }
-    case Cmd::FetchPuzzle: {
-      char path[96];
-      snprintf(path, sizeof(path), "/api/puzzle/next?angle=mix&difficulty=%s", c.user);
-      // With a token the endpoint wants the puzzle:read scope. A token without
-      // it is refused, so fall back to an anonymous request (puzzles around 1500).
-      int status = request(http, "GET", path, "", "application/json", body);
-      if (status == 401 || status == 403) {
-        LOG_INF("LICHESS", "Puzzle request refused with the token (%d); retrying anonymously", status);
-        status = request(http, "GET", path, "", "application/json", body, false);
-      }
-      lichess::Puzzle parsed;
-      const bool ok = status == 200 && lichess::parsePuzzle(body.c_str(), body.size(), parsed);
-      if (ok) {
-        MutexLock lock(dataMutex);
-        puzzle = parsed;
-      }
-      postEvent(ok ? EventType::PuzzleReady : EventType::PuzzleFailed, status);
       break;
     }
     case Cmd::FetchPuzzleBatch: {
@@ -1002,11 +970,6 @@ void LichessClient::copyDashboard(lichess::PuzzleDashboard& out) {
 void LichessClient::copyRecentGames(std::vector<lichess::GameSummary>& out) {
   MutexLock lock(dataMutex);
   out = recentGames;
-}
-
-void LichessClient::copyPuzzle(lichess::Puzzle& out) {
-  MutexLock lock(dataMutex);
-  out = puzzle;
 }
 
 void LichessClient::copyPuzzleBatch(std::vector<lichess::Puzzle>& out) {

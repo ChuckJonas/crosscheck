@@ -1,19 +1,24 @@
 #include "PuzzleStore.h"
 
+#include <Arduino.h>
 #include <HalStorage.h>
 #include <Logging.h>
 #include <Memory.h>
+#include <PuzzleThemes.h>
 
+#include <cstdio>
 #include <cstring>
 
 namespace {
-constexpr const char* LINES_PATH = chessfiles::PUZZLE_LINES_PATH;
-constexpr const char* TEMP_PATH = chessfiles::PUZZLE_TEMP_PATH;
 constexpr size_t CHUNK = 512;
 // A puzzle line is about 500 bytes; longer ones come from very long games.
 constexpr size_t MAX_LINE = 3072;
 
-// Reads the line file one line at a time from a byte offset.
+void lanePath(const char* key, bool temp, char* out, size_t size) {
+  snprintf(out, size, "%s/puzzles-%s.%s", chessfiles::DIR, key, temp ? "tmp" : "ndjson");
+}
+
+// Reads a line file one line at a time from a byte offset.
 class LineReader {
  public:
   LineReader(HalFile& file, size_t pos) : file(file), pos(pos), buf(makeUniqueNoThrow<char[]>(CHUNK)) {}
@@ -49,26 +54,42 @@ class LineReader {
   std::unique_ptr<char[]> buf;
 };
 
-// The id of a saved line without a JSON parse: lines start with {"id":"...".
-bool lineId(const std::string& line, char* out, size_t outSize) {
-  const size_t at = line.find("\"id\":\"");
+// A string field of a saved line without a JSON parse; the lines are written
+// here, so the field is "key":"value" with no escapes in it.
+bool lineField(const std::string& line, const char* key, std::string& out) {
+  char pattern[24];
+  snprintf(pattern, sizeof(pattern), "\"%s\":\"", key);
+  const size_t at = line.find(pattern);
   if (at == std::string::npos) return false;
-  const size_t start = at + 6;
+  const size_t start = at + strlen(pattern);
   const size_t end = line.find('"', start);
-  if (end == std::string::npos || end == start || end - start >= outSize) return false;
-  memcpy(out, line.data() + start, end - start);
-  out[end - start] = '\0';
-  return true;
+  if (end == std::string::npos) return false;
+  out.assign(line, start, end - start);
+  return !out.empty();
+}
+
+// The theme mask of comma separated theme keys.
+uint32_t maskOf(const std::string& keys) {
+  uint32_t mask = 0;
+  size_t start = 0;
+  while (start < keys.size()) {
+    size_t end = keys.find(',', start);
+    if (end == std::string::npos) end = keys.size();
+    const std::string key = keys.substr(start, end - start);
+    const int idx = puzzleThemeIndex(key.c_str());
+    if (idx > 0 && idx < 32) mask |= 1u << idx;
+    start = end + 1;
+  }
+  return mask;
 }
 
 void writeLine(const lichess::Puzzle& z, std::string& out) {
   JsonDocument doc;
   doc["id"] = z.id;
   doc["r"] = z.rating;
-  if (z.fen[0]) doc["fen"] = z.fen;
-  if (z.lastMove[0]) doc["lm"] = z.lastMove;
   if (!z.pgn.empty()) doc["pgn"] = z.pgn;
   doc["sol"] = z.solution;
+  if (!z.themes.empty()) doc["t"] = z.themes;
   out.clear();
   serializeJson(doc, out);
   out.push_back('\n');
@@ -77,11 +98,10 @@ void writeLine(const lichess::Puzzle& z, std::string& out) {
 bool readPuzzle(JsonVariantConst v, lichess::Puzzle& z) {
   lichess::copyStr(z.id, sizeof(z.id), v["id"] | "");
   z.rating = v["r"] | 0;
-  lichess::copyStr(z.fen, sizeof(z.fen), v["fen"] | "");
-  lichess::copyStr(z.lastMove, sizeof(z.lastMove), v["lm"] | "");
   z.pgn = v["pgn"] | "";
   z.solution = v["sol"] | "";
-  return z.id[0] && !z.solution.empty() && (z.fen[0] || !z.pgn.empty());
+  z.themes = v["t"] | "";
+  return z.id[0] && !z.solution.empty() && !z.pgn.empty();
 }
 
 bool parseLine(const std::string& line, lichess::Puzzle& z) {
@@ -92,8 +112,12 @@ bool parseLine(const std::string& line, lichess::Puzzle& z) {
 }  // namespace
 
 void PuzzleStore::toJson(JsonDocument& doc) const {
-  doc["v"] = 2;
-  doc["cursor"] = static_cast<uint32_t>(cursor);
+  doc["v"] = 4;
+  JsonObject laneObj = doc["lanes"].to<JsonObject>();
+  for (const auto& lane : lanes) {
+    JsonArray taken = laneObj[lane.key].to<JsonArray>();
+    for (const auto& id : lane.taken) taken.add(id);
+  }
   JsonArray done = doc["results"].to<JsonArray>();
   for (const auto& r : results) {
     JsonObject o = done.add<JsonObject>();
@@ -104,8 +128,19 @@ void PuzzleStore::toJson(JsonDocument& doc) const {
 
 bool PuzzleStore::fromJson(JsonVariantConst doc) {
   results.clear();
-  legacy.clear();
-  cursor = doc["cursor"] | 0u;
+  lanes.clear();
+  JsonObjectConst laneObj = doc["lanes"].as<JsonObjectConst>();
+  for (JsonPairConst kv : laneObj) {
+    if (lanes.size() >= static_cast<size_t>(MAX_LANES)) break;
+    Lane lane;
+    lichess::copyStr(lane.key, sizeof(lane.key), kv.key().c_str());
+    if (!lane.key[0]) continue;
+    for (JsonVariantConst t : kv.value().as<JsonArrayConst>()) {
+      const char* id = t | "";
+      if (id[0]) lane.taken.emplace_back(id);
+    }
+    lanes.push_back(lane);
+  }
   JsonArrayConst done = doc["results"].as<JsonArrayConst>();
   results.reserve(done.size());
   for (JsonVariantConst v : done) {
@@ -114,54 +149,86 @@ bool PuzzleStore::fromJson(JsonVariantConst doc) {
     r.win = v["win"] | false;
     if (r.id[0]) results.push_back(r);
   }
-  // A version 1 file carried the puzzles themselves.
-  JsonArrayConst old = doc["puzzles"].as<JsonArrayConst>();
-  if (old.size() > 0) {
-    legacy.reserve(old.size());
-    for (JsonVariantConst v : old) {
-      lichess::Puzzle z;
-      if (readPuzzle(v, z)) legacy.push_back(z);
-    }
-    requestResave();
-  }
   return true;
 }
 
 void PuzzleStore::load() {
   loadFromFile();  // false on the first run: nothing saved yet
   index();
-  if (!legacy.empty()) {
-    std::vector<lichess::Puzzle> moved;
-    moved.swap(legacy);
-    add(moved);
+  // Lines without themes cannot be filtered: they go.
+  for (size_t li = 0; li < lanes.size(); ++li) {
+    if (lanes[li].untagged > 0) {
+      LOG_INF("PUZZLES", "Dropping %d untagged puzzles from lane %s", lanes[li].untagged, lanes[li].key);
+      rewriteLane(static_cast<int>(li), {});
+    }
   }
+  saveToFile();
+}
+
+int PuzzleStore::laneIndex(const char* key) const {
+  for (size_t i = 0; i < lanes.size(); ++i) {
+    if (strcmp(lanes[i].key, key) == 0) return static_cast<int>(i);
+  }
+  return -1;
+}
+
+bool PuzzleStore::taken(const Lane& lane, const char* id) const {
+  for (const auto& t : lane.taken) {
+    if (t == id) return true;
+  }
+  return false;
 }
 
 void PuzzleStore::index() {
   ids.clear();
-  if (!Storage.exists(LINES_PATH)) {
-    // An add that stopped between remove and rename left only the new file.
-    if (Storage.exists(TEMP_PATH)) Storage.rename(TEMP_PATH, LINES_PATH);
-    if (!Storage.exists(LINES_PATH)) {
-      cursor = 0;
-      return;
-    }
-  }
-  HalFile file;
-  if (!Storage.openFileForRead("PUZZLES", LINES_PATH, file)) return;
-  if (cursor > file.size()) cursor = 0;
-  LineReader reader(file, cursor);
-  if (!reader.ok()) {
-    LOG_ERR("PUZZLES", "OOM: line buffer");
-    return;
-  }
   ids.reserve(64);
   std::string line;
-  while (ids.size() < static_cast<size_t>(MAX_PUZZLES) && reader.next(line)) {
-    Id id;
-    if (lineId(line, id.text, sizeof(id.text))) ids.push_back(id);
+  std::string field;
+  for (size_t li = 0; li < lanes.size(); ++li) {
+    Lane& lane = lanes[li];
+    char path[64];
+    char temp[64];
+    lanePath(lane.key, false, path, sizeof(path));
+    lanePath(lane.key, true, temp, sizeof(temp));
+    lane.untagged = 0;
+    if (!Storage.exists(path)) {
+      // An add that stopped between remove and rename left only the new file.
+      if (Storage.exists(temp)) Storage.rename(temp, path);
+      if (!Storage.exists(path)) {
+        lane.taken.clear();
+        continue;
+      }
+    }
+    HalFile file;
+    if (!Storage.openFileForRead("PUZZLES", path, file)) continue;
+    LineReader reader(file, 0);
+    if (!reader.ok()) {
+      LOG_ERR("PUZZLES", "OOM: line buffer");
+      return;
+    }
+    while (ids.size() < static_cast<size_t>(MAX_PUZZLES) && reader.next(line)) {
+      Id id;
+      id.lane = static_cast<uint8_t>(li);
+      if (!lineField(line, "id", field) || field.size() >= sizeof(id.text)) continue;
+      if (taken(lane, field.c_str())) continue;
+      lichess::copyStr(id.text, sizeof(id.text), field.c_str());
+      if (!lineField(line, "t", field)) {
+        ++lane.untagged;
+        continue;
+      }
+      id.mask = maskOf(field);
+      ids.push_back(id);
+    }
   }
-  LOG_INF("PUZZLES", "%d puzzles saved, %d results to send", count(), pendingResults());
+  LOG_INF("PUZZLES", "%d puzzles saved in %d lanes, %d results to send", count(), static_cast<int>(lanes.size()),
+          pendingResults());
+}
+
+int PuzzleStore::count(uint32_t mask) const {
+  if (mask == 0) return count();
+  int n = 0;
+  for (const auto& id : ids) n += (id.mask & mask) ? 1 : 0;
+  return n;
 }
 
 bool PuzzleStore::has(const char* id) const {
@@ -171,63 +238,87 @@ bool PuzzleStore::has(const char* id) const {
   return false;
 }
 
-bool PuzzleStore::takeNext(lichess::Puzzle& out) {
-  bool found = false;
-  while (!found && !ids.empty()) {
-    std::string line;
-    size_t next = 0;
+bool PuzzleStore::takeNext(uint32_t mask, lichess::Puzzle& out) {
+  for (int attempt = 0; attempt < 3; ++attempt) {
+    const int fitting = count(mask);
+    if (fitting == 0) return false;
+    // A random one of the fitting puzzles, so the themes stay mixed.
+    int pick = static_cast<int>(random(fitting));
+    size_t at = 0;
+    for (; at < ids.size(); ++at) {
+      if (mask != 0 && !(ids[at].mask & mask)) continue;
+      if (pick == 0) break;
+      --pick;
+    }
+    if (at >= ids.size()) return false;
+    const Id target = ids[at];
+    ids.erase(ids.begin() + static_cast<long>(at));
+    Lane& lane = lanes[target.lane];
+    char path[64];
+    lanePath(lane.key, false, path, sizeof(path));
+    // The line is found by its id, reading the lane from its head.
+    bool found = false;
     {
       HalFile file;
-      if (!Storage.exists(LINES_PATH) || !Storage.openFileForRead("PUZZLES", LINES_PATH, file)) break;
-      LineReader reader(file, cursor);
-      if (!reader.ok() || !reader.next(line)) break;
-      next = reader.position();
+      if (Storage.exists(path) && Storage.openFileForRead("PUZZLES", path, file)) {
+        LineReader reader(file, 0);
+        std::string line;
+        std::string field;
+        while (reader.ok() && reader.next(line)) {
+          if (!lineField(line, "id", field) || field != target.text) continue;
+          found = parseLine(line, out);
+          break;
+        }
+      }
     }
-    cursor = next;
-    ids.erase(ids.begin());
-    found = parseLine(line, out);
-  }
-  if (!found) ids.clear();  // the index no longer matches the file
-  if (ids.empty()) {
-    cursor = 0;
-    if (Storage.exists(LINES_PATH)) Storage.remove(LINES_PATH);
+    if (!found) {
+      LOG_ERR("PUZZLES", "Puzzle %s is not in its lane file", target.text);
+      continue;
+    }
+    lane.taken.emplace_back(target.text);
+    int left = 0;
+    for (const auto& id : ids) left += id.lane == target.lane ? 1 : 0;
+    if (left == 0) {
+      lane.taken.clear();
+      if (Storage.exists(path)) Storage.remove(path);
+    } else if (lane.taken.size() >= static_cast<size_t>(COMPACT_AT)) {
+      rewriteLane(target.lane, {});
+    }
+    saveToFile();
+    return true;
   }
   saveToFile();
-  return found;
+  return false;
 }
 
-int PuzzleStore::add(const std::vector<lichess::Puzzle>& more) {
-  std::vector<const lichess::Puzzle*> fresh;
-  fresh.reserve(more.size());
-  for (const auto& z : more) {
-    if (ids.size() + fresh.size() >= static_cast<size_t>(MAX_PUZZLES)) break;
-    if (!z.id[0] || has(z.id)) continue;
-    bool dup = false;
-    for (const auto* f : fresh) dup = dup || strcmp(f->id, z.id) == 0;
-    if (!dup) fresh.push_back(&z);
-  }
-  if (fresh.empty()) return 0;
-
-  // The file is rewritten without an append mode: the unplayed lines of the
-  // old file, then the new ones, go to a new file that takes the old one's place.
+int PuzzleStore::rewriteLane(int li, const std::vector<const lichess::Puzzle*>& fresh) {
+  Lane& lane = lanes[li];
+  char path[64];
+  char temp[64];
+  lanePath(lane.key, false, path, sizeof(path));
+  lanePath(lane.key, true, temp, sizeof(temp));
+  // Without an append mode the file is written anew: the unplayed lines of
+  // the old file, then the new ones, into a file that takes the old one's place.
   int written = 0;
   {
     HalFile out;
     Storage.mkdir(chessfiles::DIR);
-    if (!Storage.openFileForWrite("PUZZLES", TEMP_PATH, out)) {
-      LOG_ERR("PUZZLES", "Cannot write %s", TEMP_PATH);
+    if (!Storage.openFileForWrite("PUZZLES", temp, out)) {
+      LOG_ERR("PUZZLES", "Cannot write %s", temp);
       return 0;
     }
-    if (!ids.empty() && Storage.exists(LINES_PATH)) {
+    if (Storage.exists(path)) {
       HalFile in;
-      auto buf = makeUniqueNoThrow<char[]>(CHUNK);
-      if (!buf) {
-        LOG_ERR("PUZZLES", "OOM: copy buffer");
-        return 0;
-      }
-      if (Storage.openFileForRead("PUZZLES", LINES_PATH, in) && in.seek(cursor)) {
-        int n;
-        while ((n = in.read(buf.get(), CHUNK)) > 0) out.write(buf.get(), static_cast<size_t>(n));
+      if (Storage.openFileForRead("PUZZLES", path, in)) {
+        LineReader reader(in, 0);
+        std::string line;
+        std::string field;
+        while (reader.ok() && reader.next(line)) {
+          if (!lineField(line, "id", field) || taken(lane, field.c_str())) continue;
+          if (!lineField(line, "t", field)) continue;  // untagged lines are dropped
+          line.push_back('\n');
+          out.write(line.data(), line.size());
+        }
       }
     }
     std::string line;
@@ -239,10 +330,33 @@ int PuzzleStore::add(const std::vector<lichess::Puzzle>& more) {
     }
     out.flush();
   }
-  if (Storage.exists(LINES_PATH)) Storage.remove(LINES_PATH);
-  if (!Storage.rename(TEMP_PATH, LINES_PATH)) LOG_ERR("PUZZLES", "Cannot rename %s", TEMP_PATH);
-  cursor = 0;
+  if (Storage.exists(path)) Storage.remove(path);
+  if (!Storage.rename(temp, path)) LOG_ERR("PUZZLES", "Cannot rename %s", temp);
+  lane.taken.clear();
   index();
+  return written;
+}
+
+int PuzzleStore::add(const char* angle, const std::vector<lichess::Puzzle>& more) {
+  std::vector<const lichess::Puzzle*> fresh;
+  fresh.reserve(more.size());
+  for (const auto& z : more) {
+    if (ids.size() + fresh.size() >= static_cast<size_t>(MAX_PUZZLES)) break;
+    if (!z.id[0] || has(z.id)) continue;
+    bool dup = false;
+    for (const auto* f : fresh) dup = dup || strcmp(f->id, z.id) == 0;
+    if (!dup) fresh.push_back(&z);
+  }
+  if (fresh.empty()) return 0;
+  int li = laneIndex(angle);
+  if (li < 0) {
+    if (lanes.size() >= static_cast<size_t>(MAX_LANES)) return 0;
+    Lane lane;
+    lichess::copyStr(lane.key, sizeof(lane.key), angle);
+    lanes.push_back(lane);
+    li = static_cast<int>(lanes.size()) - 1;
+  }
+  const int written = rewriteLane(li, fresh);
   saveToFile();
   return written;
 }
@@ -278,7 +392,7 @@ void PuzzleStore::restoreResults(const std::vector<Result>& back) {
 }
 
 void PuzzleStore::clearAll() {
+  std::vector<Lane>().swap(lanes);
   std::vector<Id>().swap(ids);
   std::vector<Result>().swap(results);
-  std::vector<lichess::Puzzle>().swap(legacy);
 }

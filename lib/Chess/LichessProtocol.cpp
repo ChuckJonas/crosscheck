@@ -51,12 +51,12 @@ GameStatus statusFromName(const char* name) {
     GameStatus status;
   };
   static constexpr Entry TABLE[] = {
-      {"created", GameStatus::Created},   {"started", GameStatus::Started},
-      {"aborted", GameStatus::Aborted},   {"mate", GameStatus::Mate},
-      {"resign", GameStatus::Resign},     {"stalemate", GameStatus::Stalemate},
-      {"timeout", GameStatus::Timeout},   {"draw", GameStatus::Draw},
-      {"outoftime", GameStatus::OutOfTime}, {"cheat", GameStatus::Cheat},
-      {"noStart", GameStatus::NoStart},   {"unknownFinish", GameStatus::UnknownFinish},
+      {"created", GameStatus::Created},       {"started", GameStatus::Started},
+      {"aborted", GameStatus::Aborted},       {"mate", GameStatus::Mate},
+      {"resign", GameStatus::Resign},         {"stalemate", GameStatus::Stalemate},
+      {"timeout", GameStatus::Timeout},       {"draw", GameStatus::Draw},
+      {"outoftime", GameStatus::OutOfTime},   {"cheat", GameStatus::Cheat},
+      {"noStart", GameStatus::NoStart},       {"unknownFinish", GameStatus::UnknownFinish},
       {"variantEnd", GameStatus::VariantEnd},
   };
   for (const Entry& e : TABLE) {
@@ -65,7 +65,9 @@ GameStatus statusFromName(const char* name) {
   return GameStatus::Unknown;
 }
 
-bool isFinished(GameStatus s) { return s != GameStatus::Unknown && s != GameStatus::Created && s != GameStatus::Started; }
+bool isFinished(GameStatus s) {
+  return s != GameStatus::Unknown && s != GameStatus::Created && s != GameStatus::Started;
+}
 
 namespace {
 
@@ -115,8 +117,8 @@ GameLineKind parseGameLine(const char* line, size_t len, GameSnapshot& g, const 
     g.incrementMs = doc["clock"]["increment"] | 0u;
     // Board API ids are lowercase user ids; player names keep display case.
     const char* whiteId = doc["white"]["id"] | "";
-    g.myColor = sameUser(myUserId, whiteId) || sameUser(myUserId, g.white.name) ? chess::Color::White
-                                                                                : chess::Color::Black;
+    g.myColor =
+        sameUser(myUserId, whiteId) || sameUser(myUserId, g.white.name) ? chess::Color::White : chess::Color::Black;
     g.opponentGone = false;
     g.claimWinInSeconds = -1;
     readState(doc["state"], g);
@@ -248,8 +250,6 @@ bool readPuzzleEntry(JsonVariantConst entry, Puzzle& out) {
   if (id[0] == '\0') return false;
   copyStr(out.id, GAME_ID_LEN, id);
   out.rating = p["rating"] | 0;
-  copyStr(out.fen, sizeof(out.fen), p["fen"] | "");
-  copyStr(out.lastMove, sizeof(out.lastMove), p["lastMove"] | "");
   out.pgn = entry["game"]["pgn"] | "";
   out.solution.clear();
   for (JsonVariantConst m : p["solution"].as<JsonArrayConst>()) {
@@ -258,7 +258,14 @@ bool readPuzzleEntry(JsonVariantConst entry, Puzzle& out) {
     if (!out.solution.empty()) out.solution.push_back(' ');
     out.solution.append(uci);
   }
-  return (out.fen[0] != '\0' || !out.pgn.empty()) && !out.solution.empty();
+  out.themes.clear();
+  for (JsonVariantConst t : p["themes"].as<JsonArrayConst>()) {
+    const char* key = t | "";
+    if (!key[0]) continue;
+    if (!out.themes.empty()) out.themes.push_back(',');
+    out.themes.append(key);
+  }
+  return !out.pgn.empty() && !out.solution.empty();
 }
 }  // namespace
 
@@ -270,6 +277,7 @@ int parsePuzzleBatch(const char* json, size_t len, std::vector<Puzzle>& out, siz
   filter["puzzles"][0]["puzzle"]["id"] = true;
   filter["puzzles"][0]["puzzle"]["rating"] = true;
   filter["puzzles"][0]["puzzle"]["solution"] = true;
+  filter["puzzles"][0]["puzzle"]["themes"] = true;
   JsonDocument doc;
   if (deserializeJson(doc, json, len, DeserializationOption::Filter(filter)) != DeserializationError::Ok) return 0;
   int added = 0;
@@ -281,27 +289,6 @@ int parsePuzzleBatch(const char* json, size_t len, std::vector<Puzzle>& out, siz
     ++added;
   }
   return added;
-}
-
-bool parsePuzzle(const char* json, size_t len, Puzzle& out) {
-  JsonDocument doc;
-  if (deserializeJson(doc, json, len) != DeserializationError::Ok) return false;
-  JsonVariantConst p = doc["puzzle"];
-  const char* id = p["id"] | "";
-  if (id[0] == '\0') return false;
-  copyStr(out.id, GAME_ID_LEN, id);
-  out.rating = p["rating"] | 0;
-  copyStr(out.fen, sizeof(out.fen), p["fen"] | "");
-  copyStr(out.lastMove, sizeof(out.lastMove), p["lastMove"] | "");
-  out.pgn = doc["game"]["pgn"] | "";
-  out.solution.clear();
-  for (JsonVariantConst m : p["solution"].as<JsonArrayConst>()) {
-    const char* uci = m | "";
-    if (!uci[0]) continue;
-    if (!out.solution.empty()) out.solution.push_back(' ');
-    out.solution.append(uci);
-  }
-  return (out.fen[0] != '\0' || !out.pgn.empty()) && !out.solution.empty();
 }
 
 bool parseFollowingLine(const char* line, size_t len, Friend& out) {
@@ -403,7 +390,10 @@ bool parseAnalysis(const char* json, size_t len, std::vector<AnalysisPly>& out, 
     p.cp = static_cast<int16_t>(cp);
     p.mate = static_cast<int8_t>(v["mate"] | 0);
     const char* name = v["judgment"]["name"] | "";
-    p.judgment = strcmp(name, "Inaccuracy") == 0 ? 1 : strcmp(name, "Mistake") == 0 ? 2 : strcmp(name, "Blunder") == 0 ? 3 : 0;
+    p.judgment = strcmp(name, "Inaccuracy") == 0 ? 1
+                 : strcmp(name, "Mistake") == 0  ? 2
+                 : strcmp(name, "Blunder") == 0  ? 3
+                                                 : 0;
     copyStr(p.best, sizeof(p.best), v["best"] | "");
     out.push_back(p);
   }
@@ -449,8 +439,8 @@ int replayMoves(const std::string& moves, chess::Position& out, chess::Move* las
   return replayMovesFrom(start, moves, out, lastMove, maxMoves);
 }
 
-int replayMovesFrom(const chess::Position& base, const std::string& moves, chess::Position& out,
-                    chess::Move* lastMove, int maxMoves) {
+int replayMovesFrom(const chess::Position& base, const std::string& moves, chess::Position& out, chess::Move* lastMove,
+                    int maxMoves) {
   out = base;
   if (lastMove) *lastMove = chess::Move{};
   int count = 0;

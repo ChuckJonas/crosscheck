@@ -34,7 +34,6 @@ class ChessGameActivity final : public Activity {
   static constexpr int CLOCK_ROW_HEIGHT = 44;
   static constexpr uint32_t CLOCK_REDRAW_FAST_MS = 1000;
   static constexpr uint32_t CLOCK_FAST_BELOW_MS = 20000;
-  static constexpr uint32_t OPPONENT_GONE_BLOCK_MS = 15000;
   static constexpr int BAR_HEIGHT = 44;
   static constexpr int BAR_BUTTONS = 3;
 
@@ -146,6 +145,7 @@ class ChessGameActivity final : public Activity {
 
   // Puzzle state: the solution alternates solver and opponent moves.
   lichess::Puzzle puzzleData;
+  chess::Move puzzleLastMove;  // the opponent's move that led to the puzzle position
   int solveIndex = 0;
   int solutionCount = 0;
   bool puzzleSolved = false;

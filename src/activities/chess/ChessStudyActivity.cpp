@@ -500,26 +500,8 @@ void ChessStudyActivity::buildReading(UiScreen& screen) {
 }
 
 void ChessStudyActivity::buildText(UiScreen& screen) {
-  const auto& theme = screen.theme();
-  // Bottom: back to the board, and the previous or next move without leaving the text.
-  const fui::Rect band = screen.takeBottom(theme.rowHeight, theme.spaceSm);
-  const int16_t gap = theme.spaceSm;
-  const int16_t navW = 72;
-  auto button = [&](const char* label, int16_t value, fui::Rect rect) {
-    fui::ButtonProps b;
-    b.label = label;
-    b.action = ACTION_BUTTON;
-    b.value = value;
-    b.inputMask = fui::InputTouch;
-    b.text = theme.smallText;
-    b.text.align = fui::TextAlign::Center;
-    screen.button(b, rect);
-  };
-  button(tr(STR_CHESS_BOARD), BTN_BOARD,
-         fui::Rect{band.x, band.y, static_cast<int16_t>(band.width - (navW + gap) * 2), band.height});
-  button("<", BTN_PREV,
-         fui::Rect{static_cast<int16_t>(band.x + band.width - navW * 2 - gap), band.y, navW, band.height});
-  button(">", BTN_NEXT, fui::Rect{static_cast<int16_t>(band.x + band.width - navW), band.y, navW, band.height});
+  // The full comment of the shown move only; the one button returns to the board.
+  screen.button(tr(STR_CHESS_BOARD), ACTION_BUTTON, BTN_BOARD, fui::StateNormal, fui::LayoutAnchor::Bottom);
   textRect = screen.body();
 }
 
@@ -617,7 +599,20 @@ void ChessStudyActivity::loop() {
       }
     }
     const auto swipe = mappedInput.wasSwipe();
-    if (state == State::Reading || state == State::Text) {
+    if (state == State::Text) {
+      // The text page only turns its own pages; the moves stay where they are.
+      const bool back = swipe == MappedInputManager::SwipeDir::Right || swipe == MappedInputManager::SwipeDir::Down ||
+                        mappedInput.wasReleased(MappedInputManager::Button::Left) ||
+                        mappedInput.wasReleased(MappedInputManager::Button::PageBack);
+      const bool forward = swipe == MappedInputManager::SwipeDir::Left || swipe == MappedInputManager::SwipeDir::Up ||
+                           mappedInput.wasReleased(MappedInputManager::Button::Right) ||
+                           mappedInput.wasReleased(MappedInputManager::Button::PageForward);
+      if (back) {
+        pageText(-1);
+      } else if (forward) {
+        pageText(1);
+      }
+    } else if (state == State::Reading) {
       // A swipe turns pages: left goes forward through the moves, right goes back.
       const bool prev = swipe == MappedInputManager::SwipeDir::Right ||
                         mappedInput.wasReleased(MappedInputManager::Button::Left) ||
@@ -630,12 +625,7 @@ void ChessStudyActivity::loop() {
       } else if (next && !practice) {
         stepNext();
       } else if (swipe == MappedInputManager::SwipeDir::Up) {
-        if (state == State::Text)
-          pageText(1);
-        else
-          openText();
-      } else if (swipe == MappedInputManager::SwipeDir::Down) {
-        if (state == State::Text) pageText(-1);
+        openText();
       } else if (mappedInput.wasMenuGesture() || mappedInput.wasReleased(MappedInputManager::Button::Confirm)) {
         openMenu();
       }

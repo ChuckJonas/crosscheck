@@ -35,8 +35,6 @@ class LichessClient {
     AnalysisFailed,
     RecentGamesReady,  // code is the number of games; read with copyRecentGames()
     RecentGamesFailed,
-    PuzzleReady,  // read with copyPuzzle()
-    PuzzleFailed,
     EngineGameReady,   // gameId is the engine game just created
     PuzzleBatchReady,  // code is the number of puzzles; read with copyPuzzleBatch()
     PuzzleBatchFailed,
@@ -80,7 +78,6 @@ class LichessClient {
     FetchAnalysis,
     KeepAlive,
     FetchRecentGames,
-    FetchPuzzle,
     FetchPuzzleBatch,
     FetchStudies,
     FetchStudy,
@@ -120,7 +117,6 @@ class LichessClient {
   // Fetches up to max recent games of the signed-in user.
   bool fetchRecentGames(int max);
   // Fetches the next puzzle; difficulty is easiest, easier, normal, harder, or hardest.
-  bool fetchPuzzle(const char* difficulty);
   // Fetches a batch of puzzles for offline solving. When resultsJson is not
   // empty it is posted first (needs the puzzle:write scope) and the reply
   // carries the new batch; otherwise the batch is fetched with GET.
@@ -156,7 +152,6 @@ class LichessClient {
   void copyAccount(lichess::Account& out);
   void copyNowPlaying(std::vector<lichess::OngoingGame>& out);
   void copyRecentGames(std::vector<lichess::GameSummary>& out);
-  void copyPuzzle(lichess::Puzzle& out);
   void copyPuzzleBatch(std::vector<lichess::Puzzle>& out);
   void copyStudies(std::vector<lichess::StudyInfo>& out);
   void copyDashboard(lichess::PuzzleDashboard& out);
@@ -164,7 +159,6 @@ class LichessClient {
   void copyAnalysis(std::vector<lichess::AnalysisPly>& out);
   // millis() of the last game stream line, for local clock extrapolation.
   uint32_t lastGameEventMillis() const { return lastGameEventMs; }
-  uint32_t lastHeartbeatMillis() const { return lastHeartbeatMs; }
 
  private:
   enum class StreamKind : uint8_t { Game, Events };
@@ -219,7 +213,6 @@ class LichessClient {
   static void onFollowingLine(void* ctx, const char* line, size_t len);
   static void onAnalysedLine(void* ctx, const char* line, size_t len);
   static void onEventLine(void* ctx, const char* line, size_t len);
-  static void onHeartbeat(void* ctx);
 
   std::string token;
   std::string userId;
@@ -246,7 +239,6 @@ class LichessClient {
   lichess::Account account;
   std::vector<lichess::OngoingGame> nowPlaying;
   std::vector<lichess::GameSummary> recentGames;
-  lichess::Puzzle puzzle;
   std::vector<lichess::Puzzle> puzzleBatch;
   std::vector<lichess::StudyInfo> studies;
   lichess::PuzzleDashboard dashboard;
@@ -254,7 +246,6 @@ class LichessClient {
   std::vector<lichess::AnalysisPly> analysis;
   std::string pendingResults;  // body of the next batch POST, guarded by dataMutex
   std::atomic<uint32_t> lastGameEventMs{0};
-  std::atomic<uint32_t> lastHeartbeatMs{0};
 };
 
 #define LICHESS LichessClient::getInstance()

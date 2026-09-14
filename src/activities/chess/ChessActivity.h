@@ -33,7 +33,7 @@ class ChessActivity final : public Activity, private UiAppHost {
  private:
   // Connecting and Loading are the transient states of connecting on demand.
   // Computer is the engine screen.
-  enum class State : uint8_t { Lobby, Connecting, Loading, Computer, Seeking, Custom, Error, Themes, Stats, Friends };
+  enum class State : uint8_t { Lobby, Connecting, Loading, Seeking, Custom, Error, Themes, Stats };
   // What the custom dialog starts when confirmed.
   enum class DialogMode : uint8_t { Seek, Challenge, Computer };
 
@@ -111,11 +111,20 @@ class ChessActivity final : public Activity, private UiAppHost {
   int customMinutes = 10;
   int customIncrement = 0;
   int aiLevel = 3;
-  const TimeControl* cards() const { return state == State::Computer ? AI_CARDS : PEOPLE_CARDS; }
-  int presetCount() const { return state == State::Computer ? AI_PRESETS : PEOPLE_PRESETS; }
+  const TimeControl* cards() const { return playTab == PLAY_COMPUTER ? AI_CARDS : PEOPLE_CARDS; }
+  int presetCount() const { return playTab == PLAY_COMPUTER ? AI_PRESETS : PEOPLE_PRESETS; }
   int customIndex() const { return presetCount(); }
   // Lobby tab: 0 play, 1 games, 2 puzzles, 3 studies. Remembered in the settings.
   int tab = 0;
+  // Play sub-tab: match (open seeks), computer, challenge (friends), local game.
+  static constexpr int PLAY_MATCH = 0;
+  static constexpr int PLAY_COMPUTER = 1;
+  static constexpr int PLAY_CHALLENGE = 2;
+  static constexpr int PLAY_LOCAL = 3;
+  static constexpr int PLAY_TAB_COUNT = 4;
+  int playTab = 0;
+  // Where the header ends: a tap on the header opens the account popup.
+  int16_t headerBottom = 0;
   static constexpr int TAB_COUNT = 4;
   // What the Loading screen says: connecting, or a study download.
   StrId loadingText = StrId::STR_CHESS_CONNECTING;
@@ -137,7 +146,9 @@ class ChessActivity final : public Activity, private UiAppHost {
   int puzzleDifficulty = 2;
   int lastPuzzleRating = 0;
   char lastPuzzleId[lichess::GAME_ID_LEN] = {};
-  char puzzleCountLine[40];
+  char puzzleCountLine[48];
+  // The theme of the batch in flight; the reply goes to its lane.
+  char downloadTheme[24] = {};
   char puzzleResultsLine[40];
   char puzzleLine[48];
   char themeLine[48];
@@ -152,7 +163,6 @@ class ChessActivity final : public Activity, private UiAppHost {
   char studyUser[lichess::NAME_LEN] = {};
   char studyListTitle[64] = {};
   char studyDownloadLabel[48] = {};
-  char accountLine[64] = {};
   void askAccount();
   // Friends screen: the players the user follows, to challenge with one tap.
   static constexpr int MAX_FRIENDS = 60;
@@ -162,7 +172,6 @@ class ChessActivity final : public Activity, private UiAppHost {
   freeink::ui::ListItem friendRows[MAX_FRIENDS];
   freeink::ui::ListNav friendNav;
   void rebuildFriendRows();
-  void buildFriends(UiScreen& screen);
   // Where the token QR code goes on the Play tab while there is no token.
   freeink::ui::Rect qrRect{};
   void enterStudyUser();
@@ -178,7 +187,25 @@ class ChessActivity final : public Activity, private UiAppHost {
   void enterStudyId();
   // Puzzle theme picker and the results screen.
   static constexpr int MAX_STATS = 24;
+  // The theme picker: an "all" row, then one toggle row per real theme (the
+  // mix entry is only a download angle) with the count of puzzles that have it.
   freeink::ui::ListItem themeRows[PUZZLE_THEME_COUNT];
+  char themeRowLabels[PUZZLE_THEME_COUNT][40];
+  bool themeSelected[PUZZLE_THEME_COUNT] = {};
+  char themeSummary[64] = {};
+  int downloadBatchIndex = 0;
+  void loadThemeSelection();
+  void saveThemeSelection();
+  int selectedThemeCount() const;
+  // Bit i for each selected theme i of PUZZLE_THEMES; 0 when all themes are selected.
+  uint32_t selectionMask() const;
+  // Unplayed puzzles that fit the selected themes.
+  int readyCount() const;
+  // The theme a download batch asks for: the selected themes in turn, else mix.
+  const char* downloadThemeFor(int batch) const;
+  // Takes a puzzle from the selected lanes, spread by how many each holds.
+  bool takeSelected(lichess::Puzzle& out);
+  void buildThemeSummary();
   freeink::ui::ListNav themeNav;
   lichess::PuzzleDashboard dashboard;
   bool dashboardLoading = false;
@@ -241,7 +268,13 @@ class ChessActivity final : public Activity, private UiAppHost {
 
   static void screenTrampoline(UiScreen& screen, void* user);
   void buildScreen(UiScreen& screen);
-  void buildLobby(UiScreen& screen);
+  void buildPlay(UiScreen& screen);
+  void buildSubTabs(UiScreen& screen);
+  void buildMatch(UiScreen& screen);
+  void buildComputer(UiScreen& screen);
+  void buildChallenge(UiScreen& screen);
+  void buildLocal(UiScreen& screen);
+  void buildCards(UiScreen& screen);
   void buildCustomDialog(UiScreen& screen);
   static void onAction(const freeink::ui::ActionEvent& event, void* user);
   void handleAction(const freeink::ui::ActionEvent& event);

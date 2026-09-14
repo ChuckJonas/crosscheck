@@ -4,11 +4,9 @@
 
 namespace {
 // Bumped when a stored default must be replaced on load.
-constexpr uint8_t CONFIG_VERSION = 3;
 }  // namespace
 
 void ChessSettings::toJson(JsonDocument& doc) const {
-  doc["cfgVersion"] = CONFIG_VERSION;
   doc["token_obf"] = obfuscation::obfuscateToBase64(token);
   doc["username"] = username;
   doc["userId"] = userId;
@@ -21,7 +19,8 @@ void ChessSettings::toJson(JsonDocument& doc) const {
   doc["aiLevel"] = aiLevel;
   doc["lobbyTab"] = lobbyTab;
   doc["puzzleDifficulty"] = puzzleDifficulty;
-  doc["puzzleTheme"] = puzzleTheme;
+  doc["playTab"] = playTab;
+  doc["puzzleThemes"] = puzzleThemes;
 }
 
 bool ChessSettings::fromJson(JsonVariantConst doc) {
@@ -53,19 +52,9 @@ bool ChessSettings::fromJson(JsonVariantConst doc) {
   lobbyTab = doc["lobbyTab"] | (uint8_t)0;
   if (lobbyTab > 3) lobbyTab = 0;
   puzzleDifficulty = doc["puzzleDifficulty"] | (uint8_t)2;
+  playTab = doc["playTab"] | (uint8_t)0;
+  if (playTab > 3) playTab = 0;
   if (puzzleDifficulty > 4) puzzleDifficulty = 2;
-  puzzleTheme = doc["puzzleTheme"] | "mix";
-  if (puzzleTheme.empty()) puzzleTheme = "mix";
-  // Files from before version 2 stored the old 1 second default; move them to 5.
-  const uint8_t cfgVersion = doc["cfgVersion"] | (uint8_t)1;
-  if (cfgVersion < 2) {
-    clockRefreshSec = 5;
-    requestResave();
-  }
-  // Version 3 turned the frontlight pulse off by default.
-  if (cfgVersion < 3) {
-    pulseMs = 0;
-    requestResave();
-  }
+  puzzleThemes = doc["puzzleThemes"] | "";
   return true;
 }

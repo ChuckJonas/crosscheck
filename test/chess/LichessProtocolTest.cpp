@@ -107,26 +107,24 @@ TEST(Protocol, ParsesGameSummaryAndPuzzle) {
   EXPECT_FALSE(parseGameSummary(odd, strlen(odd), "illbilly", o));
 
   const char* pz =
-      "{\"game\":{\"id\":\"abc\",\"pgn\":\"e4 e5\"},\"puzzle\":{\"id\":\"PZ123\",\"rating\":1918,"
+      "{\"puzzles\":[{\"game\":{\"id\":\"abc\",\"pgn\":\"e4 e5\"},\"puzzle\":{\"id\":\"PZ123\",\"rating\":1918,"
       "\"solution\":[\"g1g7\",\"g8g7\",\"e3h6\"],\"fen\":\"6k1/8/8/8/8/4B3/2Q3R1/6K1 w - - 0 1\","
-      "\"lastMove\":\"h8g8\",\"initialPly\":55}}";
-  Puzzle z;
-  ASSERT_TRUE(parsePuzzle(pz, strlen(pz), z));
+      "\"lastMove\":\"h8g8\",\"initialPly\":55}}]}";
+  std::vector<Puzzle> single;
+  ASSERT_EQ(parsePuzzleBatch(pz, strlen(pz), single, 10), 1);
+  const Puzzle& z = single[0];
   EXPECT_STREQ(z.id, "PZ123");
   EXPECT_EQ(z.rating, 1918);
   EXPECT_EQ(z.solution, "g1g7 g8g7 e3h6");
-  EXPECT_STREQ(z.lastMove, "h8g8");
-  chess::Position pos;
-  ASSERT_TRUE(pos.setFromFen(z.fen));
-  EXPECT_EQ(pos.sideToMove(), chess::Color::White);
 
-  // The "next" endpoint carries no FEN: only the game moves and initialPly.
+  // A batch puzzle carries no FEN: only the game moves, and the solver moves
+  // next in the position after them.
   const char* next =
-      "{\"game\":{\"id\":\"4ULyN7VZ\",\"pgn\":\"e4 e5 Nf3 Nc6 Bb5 a6\"},\"puzzle\":{\"id\":\"NX1\","
-      "\"rating\":1500,\"solution\":[\"b5c6\",\"d7c6\"],\"initialPly\":5}}";
-  Puzzle n;
-  ASSERT_TRUE(parsePuzzle(next, strlen(next), n));
-  EXPECT_STREQ(n.fen, "");
+      "{\"puzzles\":[{\"game\":{\"id\":\"4ULyN7VZ\",\"pgn\":\"e4 e5 Nf3 Nc6 Bb5 a6\"},\"puzzle\":{\"id\":\"NX1\","
+      "\"rating\":1500,\"solution\":[\"b5c6\",\"d7c6\"],\"initialPly\":5}}]}";
+  std::vector<Puzzle> one;
+  ASSERT_EQ(parsePuzzleBatch(next, strlen(next), one, 10), 1);
+  const Puzzle& n = one[0];
   EXPECT_EQ(n.pgn, "e4 e5 Nf3 Nc6 Bb5 a6");
   chess::Position after;
   std::string uci;
@@ -144,6 +142,8 @@ TEST(Protocol, ParsesGameSummaryAndPuzzle) {
   EXPECT_STREQ(many[1].id, "B2");
   EXPECT_EQ(many[1].solution, "d7d5 c2c4");
   EXPECT_EQ(many[0].pgn, "e4 e5");
+  EXPECT_EQ(many[0].themes, "x");
+  EXPECT_EQ(many[1].themes, "");
 }
 
 TEST(Protocol, ParsesRatingDiff) {

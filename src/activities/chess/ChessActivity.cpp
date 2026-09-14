@@ -35,26 +35,24 @@ constexpr fui::ActionId ACTION_TAB = 6;
 constexpr fui::ActionId ACTION_LAST = ACTION_TAB;
 constexpr int16_t BTN_TOKEN = 1;
 constexpr int16_t BTN_LOCAL = 2;
-constexpr int16_t BTN_CHALLENGE = 3;
-constexpr int16_t BTN_CANCEL = 4;
-constexpr int16_t BTN_RETRY = 5;
-constexpr int16_t BTN_DIALOG_OK = 6;
-constexpr int16_t BTN_DIALOG_CANCEL = 7;
-constexpr int16_t BTN_COMPUTER = 8;
-constexpr int16_t BTN_BACK = 9;
-constexpr int16_t BTN_REFRESH_GAMES = 11;
-constexpr int16_t BTN_NEXT_PUZZLE = 12;
-constexpr int16_t BTN_DOWNLOAD = 14;
-constexpr int16_t BTN_STOP_DOWNLOAD = 15;
-constexpr int16_t BTN_REFRESH_STUDIES = 16;
-constexpr int16_t BTN_STUDY_BY_ID = 17;
-constexpr int16_t BTN_THEME = 18;
-constexpr int16_t BTN_STATS = 19;
-constexpr int16_t BTN_LOAD_ONGOING = 20;
-constexpr int16_t BTN_STUDIES_BY_USER = 21;
-constexpr int16_t BTN_DOWNLOAD_STUDIES = 22;
-constexpr int16_t BTN_ACCOUNT = 23;
-constexpr int16_t BTN_CHALLENGE_NAME = 24;
+constexpr int16_t BTN_CANCEL = 3;
+constexpr int16_t BTN_RETRY = 4;
+constexpr int16_t BTN_DIALOG_OK = 5;
+constexpr int16_t BTN_DIALOG_CANCEL = 6;
+constexpr int16_t BTN_BACK = 7;
+constexpr int16_t BTN_REFRESH_GAMES = 8;
+constexpr int16_t BTN_NEXT_PUZZLE = 9;
+constexpr int16_t BTN_DOWNLOAD = 10;
+constexpr int16_t BTN_STOP_DOWNLOAD = 11;
+constexpr int16_t BTN_REFRESH_STUDIES = 12;
+constexpr int16_t BTN_STUDY_BY_ID = 13;
+constexpr int16_t BTN_THEME = 14;
+constexpr int16_t BTN_STATS = 15;
+constexpr int16_t BTN_LOAD_ONGOING = 16;
+constexpr int16_t BTN_STUDIES_BY_USER = 17;
+constexpr int16_t BTN_DOWNLOAD_STUDIES = 18;
+constexpr int16_t BTN_CHALLENGE_NAME = 19;
+constexpr int16_t BTN_LOAD_FRIENDS = 20;
 // Stepper values: +-1 minutes, +-10 increment, +-100 AI level.
 constexpr int16_t STEP_INCREMENT_UNIT = 10;
 constexpr int16_t STEP_LEVEL_UNIT = 100;
@@ -73,6 +71,17 @@ constexpr int QR_SIZE = 220;
 constexpr int AI_RATING[8] = {800, 1100, 1400, 1700, 2000, 2300, 2700, 3000};
 
 // Lichess speed category from the estimated game length in seconds.
+// Tab highlight for both tab levels: the selected tab is inverted.
+fui::StyleSet tabStyles(const fui::ThemeTokens& theme) {
+  fui::StyleSet styles;
+  styles.explicitlySet = true;
+  styles.normal.foreground = fui::Paint::solid(fui::Color::Black);
+  styles.selected.background = fui::Paint::solid(fui::Color::Black);
+  styles.selected.foreground = fui::Paint::solid(fui::Color::White);
+  styles.selected.radius = theme.listRowRadius;
+  return styles;
+}
+
 StrId categoryFor(int minutes, int increment) {
   const int estimate = minutes * 60 + increment * 40;
   if (estimate < 180) return StrId::STR_CHESS_BULLET;
@@ -97,7 +106,6 @@ void ChessActivity::onEnter() {
   for (fui::ActionId a = ACTION_BUTTON; a <= ACTION_LAST; ++a) app.on(a, &ChessActivity::onAction, this);
   app.setScreen(&ChessActivity::screenTrampoline, this);
 
-  chessfiles::migrate();
   CHESS_SETTINGS.loadFromFile();
   PUZZLE_STORE.load();
   STUDY_STORE.load();
@@ -107,7 +115,9 @@ void ChessActivity::onEnter() {
   customIncrement = CHESS_SETTINGS.getCustomIncrement();
   aiLevel = CHESS_SETTINGS.getAiLevel();
   tab = CHESS_SETTINGS.getLobbyTab();
+  playTab = CHESS_SETTINGS.getPlayTab();
   puzzleDifficulty = CHESS_SETTINGS.getPuzzleDifficulty();
+  loadThemeSelection();
   puzzleLine[0] = '\0';
   ratingLine[0] = '\0';
   lichess::copyStr(account.username, sizeof(account.username), CHESS_SETTINGS.getUsername().c_str());
@@ -204,8 +214,9 @@ void ChessActivity::afterConnect() {
   runPending();
   if (autoSynced) return;
   autoSynced = true;
-  if (PUZZLE_STORE.pendingResults() > 0 || PUZZLE_STORE.count() < PuzzleStore::REFILL_BELOW) {
-    const int topUp = PuzzleStore::TOP_UP - PUZZLE_STORE.count();
+  const int have = readyCount();
+  if (PUZZLE_STORE.pendingResults() > 0 || have < PuzzleStore::REFILL_BELOW) {
+    const int topUp = PuzzleStore::TOP_UP - have;
     syncPuzzles(false, topUp > 0 ? topUp : 0);
   }
 }
@@ -281,7 +292,8 @@ void ChessActivity::runPending() {
         friendsLoading = true;
         LICHESS.fetchFriends();
       }
-      state = State::Friends;
+      tab = 0;
+      playTab = PLAY_CHALLENGE;
       requestUpdate();
       break;
     default:
@@ -308,7 +320,8 @@ void ChessActivity::syncPuzzles(bool openAfter, int need) {
   if (need <= 0) need = 1;  // the batch endpoint wants at least one
   puzzleLoading = true;
   pendingPuzzleOpen = openAfter;
-  LICHESS.fetchPuzzleBatch(CHESS_SETTINGS.getPuzzleTheme().c_str(), DIFFICULTY_NAMES[puzzleDifficulty], need, results);
+  lichess::copyStr(downloadTheme, sizeof(downloadTheme), downloadThemeFor(downloadBatchIndex++));
+  LICHESS.fetchPuzzleBatch(downloadTheme, DIFFICULTY_NAMES[puzzleDifficulty], need, results);
   requestUpdate();
 }
 
@@ -361,26 +374,19 @@ void ChessActivity::handleClientEvents() {
         startReview(index, std::move(a));
         break;
       }
-      case LichessClient::EventType::PuzzleReady: {
-        puzzleLoading = false;
-        lichess::Puzzle p;
-        LICHESS.copyPuzzle(p);
-        openPuzzle(p);
-        break;
-      }
       case LichessClient::EventType::PuzzleBatchReady: {
         puzzleLoading = false;
         resultsInFlight.clear();  // recorded by Lichess
         std::vector<lichess::Puzzle> more;
         LICHESS.copyPuzzleBatch(more);
-        PUZZLE_STORE.add(more);
+        PUZZLE_STORE.add(downloadTheme, more);
         if (downloadTarget > 0) {
           downloadDone += static_cast<int>(more.size());
           if (downloadDone >= downloadTarget || PUZZLE_STORE.count() >= PuzzleStore::MAX_PUZZLES) downloadTarget = 0;
         }
         const bool open = pendingPuzzleOpen;
         pendingPuzzleOpen = false;
-        if (open && PUZZLE_STORE.count() > 0) {
+        if (open && readyCount() > 0) {
           requestPuzzle();
         } else {
           requestUpdate();
@@ -402,10 +408,6 @@ void ChessActivity::handleClientEvents() {
           PUZZLE_STORE.saveToFile();
         }
         showError(StrId::STR_CHESS_ERROR_PUZZLE, ev.code, ev.detail);
-        break;
-      case LichessClient::EventType::PuzzleFailed:
-        puzzleLoading = false;
-        showError(StrId::STR_CHESS_ERROR_PUZZLE, ev.code);
         break;
       case LichessClient::EventType::StudiesReady: {
         std::vector<lichess::StudyInfo> list;
@@ -539,7 +541,7 @@ void ChessActivity::handleClientEvents() {
         // clock does not run unseen.
         bool known = false;
         for (const auto& g : ongoing) known = known || strcmp(g.gameId, ev.gameId) == 0;
-        const bool idle = state == State::Lobby || state == State::Computer || state == State::Custom;
+        const bool idle = state == State::Lobby || state == State::Custom;
         if (state == State::Seeking || (idle && ongoingLoaded && !known)) openGame(ev.gameId, ev.color);
         break;
       }
@@ -609,7 +611,7 @@ void ChessActivity::openGame(const char* gameId, int colorHint) {
                            LICHESS.copyPuzzleBatch(more);
                            if (!more.empty()) {
                              resultsInFlight.clear();
-                             PUZZLE_STORE.add(more);
+                             PUZZLE_STORE.add(downloadTheme, more);
                            }
                            LICHESS.fetchNowPlaying();
                            requestUpdate();
@@ -670,13 +672,22 @@ void ChessActivity::askDownloadCount() {
   }
   levelChoice = -1;
   popupKind = PopupKind::Count;
+  downloadBatchIndex = 0;
   levelPopup.show(tr(STR_CHESS_DOWNLOAD_COUNT), labels, 5, 0, [this](const int idx) { levelChoice = idx; });
   requestUpdate();
 }
 
 int ChessActivity::nextBatch() const {
   const int left = downloadTarget > 0 ? downloadTarget - downloadDone : PuzzleStore::BATCH_SIZE;
-  return left < PuzzleStore::BATCH_SIZE ? left : PuzzleStore::BATCH_SIZE;
+  int batch = left < PuzzleStore::BATCH_SIZE ? left : PuzzleStore::BATCH_SIZE;
+  // Several themes share a download: each batch takes its part, ten at least.
+  const int themes = selectedThemeCount();
+  if (themes > 1) {
+    int share = (left + themes - 1) / themes;
+    if (share < 10) share = 10;
+    if (share < batch) batch = share;
+  }
+  return batch;
 }
 
 void ChessActivity::askLevel(TimeControl control) {
@@ -998,7 +1009,7 @@ void ChessActivity::rebuildStatRows() {
 
 void ChessActivity::requestPuzzle() {
   lichess::Puzzle saved;
-  if (PUZZLE_STORE.takeNext(saved)) {
+  if (takeSelected(saved)) {
     openPuzzle(saved);
     return;
   }
@@ -1035,7 +1046,7 @@ void ChessActivity::openPuzzle(const lichess::Puzzle& puzzle) {
                              LICHESS.copyPuzzleBatch(more);
                              if (!more.empty()) {
                                resultsInFlight.clear();
-                               PUZZLE_STORE.add(more);
+                               PUZZLE_STORE.add(downloadTheme, more);
                              }
                            }
                            // Results go out in small groups while a connection is up.
@@ -1059,16 +1070,11 @@ void ChessActivity::handleAction(const fui::ActionEvent& event) {
         startActivityForResult(std::make_unique<ChessGameActivity>(renderer, mappedInput),
                                [this](const ActivityResult&) { requestUpdate(); });
         break;
-      case BTN_CHALLENGE:
-        connectThen(Pending::Friends);
-        break;
       case BTN_CHALLENGE_NAME:
         enterChallengeUsername();
         break;
-      case BTN_COMPUTER:
-        state = State::Computer;
-        rebuildCardLabels();
-        requestUpdate();
+      case BTN_LOAD_FRIENDS:
+        connectThen(Pending::Friends);
         break;
       case BTN_BACK:
         pendingAction = Pending::None;
@@ -1096,15 +1102,12 @@ void ChessActivity::handleAction(const fui::ActionEvent& event) {
       case BTN_DOWNLOAD_STUDIES:
         queueMissingStudies();
         break;
-      case BTN_ACCOUNT:
-        askAccount();
-        break;
       case BTN_STUDY_BY_ID:
         enterStudyId();
         break;
       case BTN_THEME:
         state = State::Themes;
-        themeNav.reset(puzzleThemeIndex(CHESS_SETTINGS.getPuzzleTheme().c_str()));
+        themeNav.reset(0);
         requestUpdate();
         break;
       case BTN_STATS:
@@ -1149,11 +1152,11 @@ void ChessActivity::handleAction(const fui::ActionEvent& event) {
   switch (event.action) {
     case ACTION_CARD:
       if (event.value == customIndex()) {
-        dialogMode = state == State::Computer ? DialogMode::Computer : DialogMode::Seek;
+        dialogMode = playTab == PLAY_COMPUTER ? DialogMode::Computer : DialogMode::Seek;
         state = State::Custom;
         requestUpdate();
       } else if (event.value >= 0 && event.value < customIndex()) {
-        if (state == State::Computer) {
+        if (playTab == PLAY_COMPUTER) {
           app.clearTapFlash();
           askLevel(cards()[event.value]);
         } else {
@@ -1163,6 +1166,19 @@ void ChessActivity::handleAction(const fui::ActionEvent& event) {
       }
       break;
     case ACTION_TAB:
+      // The tap feedback would paint the tapped tab in its pressed look on
+      // top of the selected one, so the highlight looked gone until the
+      // next repaint. The selected style is the feedback here.
+      app.clearTapFlash();
+      if (event.value >= 10 && event.value < 10 + PLAY_TAB_COUNT) {
+        // A Play sub-tab. The challenge one lists the followed players, so it connects.
+        playTab = event.value - 10;
+        CHESS_SETTINGS.setPlayTab(playTab);
+        CHESS_SETTINGS.saveToFile();
+        if (playTab == PLAY_CHALLENGE && CHESS_SETTINGS.hasToken() && !friendsLoading) connectThen(Pending::Friends);
+        requestUpdate();
+        break;
+      }
       if (event.value < 0 || event.value >= TAB_COUNT) break;
       tab = event.value;
       CHESS_SETTINGS.setLobbyTab(tab);
@@ -1177,27 +1193,23 @@ void ChessActivity::handleAction(const fui::ActionEvent& event) {
       break;
     case ACTION_ROW:
       if (state == State::Themes) {
-        if (event.value >= 0 && event.value < PUZZLE_THEME_COUNT) {
-          CHESS_SETTINGS.setPuzzleTheme(PUZZLE_THEMES[event.value].key);
-          CHESS_SETTINGS.saveToFile();
+        // Row 0 is "all themes"; the others toggle one theme each. The list stays up.
+        if (event.value == 0) {
+          for (bool& on : themeSelected) on = false;
+        } else if (event.value > 0 && event.value < PUZZLE_THEME_COUNT) {
+          themeSelected[event.value] = !themeSelected[event.value];
         }
-        state = State::Lobby;
+        saveThemeSelection();
         requestUpdate();
       } else if (state == State::Stats) {
         if (event.value >= 0 && event.value < static_cast<int>(dashboard.themes.size())) {
-          CHESS_SETTINGS.setPuzzleTheme(dashboard.themes[event.value].key);
-          CHESS_SETTINGS.saveToFile();
+          for (bool& on : themeSelected) on = false;
+          const int idx = puzzleThemeIndex(dashboard.themes[event.value].key);
+          if (idx > 0 || strcmp(dashboard.themes[event.value].key, "mix") == 0) themeSelected[idx] = true;
+          saveThemeSelection();
         }
         state = State::Lobby;
         tab = 2;
-        requestUpdate();
-      } else if (state == State::Friends) {
-        if (event.value >= 0 && event.value < static_cast<int>(friends.size())) {
-          // The time control dialog follows, as after a typed name.
-          lichess::copyStr(challengeUser, sizeof(challengeUser), friends[event.value].name);
-          dialogMode = DialogMode::Challenge;
-          state = State::Custom;
-        }
         requestUpdate();
       } else if (tab == 3) {
         const auto& list = STUDY_STORE.entries();
@@ -1211,6 +1223,14 @@ void ChessActivity::handleAction(const fui::ActionEvent& event) {
         }
       } else if (tab == 1) {
         openReview(event.value);
+      } else if (playTab == PLAY_CHALLENGE) {
+        if (event.value >= 0 && event.value < static_cast<int>(friends.size())) {
+          // The time control dialog follows, as after a typed name.
+          lichess::copyStr(challengeUser, sizeof(challengeUser), friends[event.value].name);
+          dialogMode = DialogMode::Challenge;
+          state = State::Custom;
+        }
+        requestUpdate();
       } else if (event.value >= 0 && event.value < static_cast<int>(ongoing.size())) {
         openGame(ongoing[event.value].gameId, ongoing[event.value].myColor == chess::Color::Black ? 1 : 0);
       }
@@ -1297,6 +1317,13 @@ void ChessActivity::loop() {
     const auto route = routeTouch(mappedInput);
     if (route.routed && app.invalidated()) requestUpdate();
     if (route) return;
+    int tx = 0;
+    int ty = 0;
+    if (state == State::Lobby && CHESS_SETTINGS.hasToken() && mappedInput.wasScreenTapped(tx, ty) &&
+        ty < headerBottom) {
+      askAccount();  // the header shows the account; a tap on it manages the token
+      return;
+    }
     const auto swipe = mappedInput.wasSwipe();
     if (swipe == MappedInputManager::SwipeDir::Up || swipe == MappedInputManager::SwipeDir::Down) {
       // The scrolling lists: recent games, studies, themes, and results.
@@ -1315,7 +1342,7 @@ void ChessActivity::loop() {
       } else if (state == State::Stats) {
         nav = &statNav;
         count = static_cast<int>(dashboard.themes.size());
-      } else if (state == State::Friends) {
+      } else if (state == State::Lobby && tab == 0 && playTab == PLAY_CHALLENGE) {
         nav = &friendNav;
         count = static_cast<int>(friends.size());
       }
@@ -1327,8 +1354,7 @@ void ChessActivity::loop() {
     RenderLock lock;
     if (state == State::Seeking) {
       cancelSeek();
-    } else if (state == State::Custom || state == State::Computer || state == State::Error || state == State::Themes ||
-               state == State::Stats || state == State::Friends) {
+    } else if (state == State::Custom || state == State::Error || state == State::Themes || state == State::Stats) {
       pendingAction = Pending::None;
       state = State::Lobby;
       rebuildCardLabels();
@@ -1372,9 +1398,9 @@ void ChessActivity::screenTrampoline(UiScreen& screen, void* user) {
 void ChessActivity::buildScreen(UiScreen& screen) {
   const auto& metrics = UITheme::getInstance().getMetrics();
   const Rect safe = UITheme::getInstance().getScreenSafeArea(renderer, false, false);
+  headerBottom = static_cast<int16_t>(safe.y + metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing);
   screen.setContentMarginFromScreen(fui::Insets{
-      static_cast<int16_t>(safe.y + metrics.topPadding + metrics.headerHeight + metrics.verticalSpacing),
-      static_cast<int16_t>(renderer.getScreenWidth() - (safe.x + safe.width)),
+      headerBottom, static_cast<int16_t>(renderer.getScreenWidth() - (safe.x + safe.width)),
       static_cast<int16_t>(renderer.getScreenHeight() - (safe.y + safe.height) + metrics.verticalSpacing * 2),
       static_cast<int16_t>(safe.x)});
   const auto& theme = screen.theme();
@@ -1391,9 +1417,6 @@ void ChessActivity::buildScreen(UiScreen& screen) {
       break;
     case State::Stats:
       buildStats(screen);
-      break;
-    case State::Friends:
-      buildFriends(screen);
       break;
     case State::Error: {
       char msg[96];
@@ -1447,22 +1470,58 @@ void ChessActivity::buildScreen(UiScreen& screen) {
       } else if (tab == 3) {
         buildStudies(screen);
       } else {
-        buildLobby(screen);
+        buildPlay(screen);
       }
-      break;
-    case State::Computer:
-      buildLobby(screen);
       break;
   }
 }
 
-void ChessActivity::buildLobby(UiScreen& screen) {
-  const auto& theme = screen.theme();
-  const bool computer = state == State::Computer;
-  rebuildCardLabels();  // the card set follows the state
+void ChessActivity::buildPlay(UiScreen& screen) {
+  rebuildCardLabels();  // the card set follows the sub-tab
+  buildSubTabs(screen);
+  switch (playTab) {
+    case PLAY_COMPUTER:
+      buildComputer(screen);
+      break;
+    case PLAY_CHALLENGE:
+      buildChallenge(screen);
+      break;
+    case PLAY_LOCAL:
+      buildLocal(screen);
+      break;
+    default:
+      buildMatch(screen);
+      break;
+  }
+}
 
+void ChessActivity::buildSubTabs(UiScreen& screen) {
+  const auto& theme = screen.theme();
+  fui::TabItem tabs[PLAY_TAB_COUNT];
+  const StrId labels[PLAY_TAB_COUNT] = {StrId::STR_CHESS_SUB_MATCH, StrId::STR_CHESS_COMPUTER,
+                                        StrId::STR_CHESS_CHALLENGE, StrId::STR_CHESS_SUB_LOCAL};
+  for (int i = 0; i < PLAY_TAB_COUNT; ++i) {
+    tabs[i].label = I18N.get(labels[i]);
+    tabs[i].value = static_cast<int16_t>(10 + i);
+    tabs[i].selected = playTab == i;
+  }
+  fui::TabBarProps props;
+  props.tabs = tabs;
+  props.count = PLAY_TAB_COUNT;
+  props.action = ACTION_TAB;
+  props.inputMask = fui::InputTouch;
+  props.text = theme.smallText;
+  props.divider = true;
+  // The same inverted highlight as the main tabs, so both levels read alike.
+  props.tabStyles = tabStyles(theme);
+  const fui::Rect band = screen.takeTop(theme.rowHeight, theme.spaceSm);
+  fui::tabBar(screen.frame(), band, props);
+}
+
+void ChessActivity::buildMatch(UiScreen& screen) {
+  const auto& theme = screen.theme();
   qrRect = fui::Rect{};
-  if (!computer && !CHESS_SETTINGS.hasToken()) {
+  if (!CHESS_SETTINGS.hasToken()) {
     // No token yet: a QR code opens the token page with the scopes ticked.
     // The code is drawn after the UI, in render().
     fui::TextStyle body = theme.smallText;
@@ -1472,25 +1531,10 @@ void ChessActivity::buildLobby(UiScreen& screen) {
                   tr(STR_CHESS_TOKEN_HELP), body);
     qrRect = screen.takeTop(static_cast<int16_t>(QR_SIZE), theme.spaceSm);
     screen.button(tr(STR_CHESS_ENTER_TOKEN), ACTION_BUTTON, BTN_TOKEN);
-  } else if (!computer) {
-    // The account row: who is signed in, and where the token is changed.
-    snprintf(accountLine, sizeof(accountLine), tr(STR_CHESS_ACCOUNT_LINE),
-             signedIn() && account.username[0]      ? account.username
-             : CHESS_SETTINGS.getUsername().empty() ? tr(STR_CHESS_TOKEN_SAVED)
-                                                    : CHESS_SETTINGS.getUsername().c_str());
-    fui::ButtonProps b;
-    b.label = accountLine;
-    b.action = ACTION_BUTTON;
-    b.value = BTN_ACCOUNT;
-    b.inputMask = fui::InputTouch;
-    b.text = theme.smallText;
-    screen.button(b);
+    return;
   }
-
-  // Ongoing games, up to three rows (lobby only). Offline they load on a tap.
-  const int rows =
-      computer ? 0 : (ongoing.size() < MAX_ONGOING_ROWS ? static_cast<int>(ongoing.size()) : MAX_ONGOING_ROWS);
-  if (!computer && !signedIn() && CHESS_SETTINGS.hasToken()) {
+  // Ongoing games, up to three rows. Offline they load on a tap.
+  if (!signedIn()) {
     fui::ButtonProps b;
     b.label = tr(STR_CHESS_LOAD_ONGOING);
     b.action = ACTION_BUTTON;
@@ -1499,6 +1543,7 @@ void ChessActivity::buildLobby(UiScreen& screen) {
     b.text = theme.smallText;
     screen.button(b);
   }
+  const int rows = ongoing.size() < MAX_ONGOING_ROWS ? static_cast<int>(ongoing.size()) : MAX_ONGOING_ROWS;
   if (rows > 0) {
     fui::ListProps props;
     props.items = ongoingRows;
@@ -1512,35 +1557,97 @@ void ChessActivity::buildLobby(UiScreen& screen) {
     screen.list(props, static_cast<int16_t>(rowH * rows));
     screen.spacer(theme.spaceSm);
   }
+  // The Rated switch sits right above the cards it applies to.
+  fui::ToggleRowProps rated;
+  rated.row.label = tr(STR_CHESS_RATED);
+  rated.checked = seekRated;
+  rated.toggleAction = ACTION_RATED;
+  rated.row.inputMask = fui::InputTouch;
+  screen.toggleRow(rated);
+  screen.spacer(theme.spaceSm);
+  buildCards(screen);
+}
 
-  // Bottom: the lobby has the Rated toggle and Computer / Challenge / Local
-  // game; the engine screen has a Back button.
-  if (computer) {
-    screen.button(tr(STR_BACK), ACTION_BUTTON, BTN_BACK, fui::StateNormal, fui::LayoutAnchor::Bottom);
-  } else {
-    fui::ToggleRowProps rated;
-    rated.row.label = tr(STR_CHESS_RATED);
-    rated.checked = seekRated;
-    rated.toggleAction = ACTION_RATED;
-    rated.row.inputMask = fui::InputTouch;
-    screen.toggleRow(rated, 0, fui::LayoutAnchor::Bottom);
-    const fui::Rect band = screen.takeBottom(theme.rowHeight, theme.spaceSm);
-    const int16_t gap = theme.spaceSm;
-    const int16_t third = static_cast<int16_t>((band.width - gap * 2) / 3);
-    const StrId labels[3] = {StrId::STR_CHESS_COMPUTER, StrId::STR_CHESS_CHALLENGE, StrId::STR_CHESS_LOCAL_GAME};
-    const int16_t values[3] = {BTN_COMPUTER, BTN_CHALLENGE, BTN_LOCAL};
-    for (int i = 0; i < 3; ++i) {
-      fui::ButtonProps b;
-      b.label = I18N.get(labels[i]);
-      b.action = ACTION_BUTTON;
-      b.value = values[i];
-      b.inputMask = fui::InputTouch;
-      b.text = theme.smallText;
-      screen.button(b, fui::Rect{static_cast<int16_t>(band.x + i * (third + gap)), band.y, third, band.height});
-    }
+void ChessActivity::buildComputer(UiScreen& screen) {
+  const auto& theme = screen.theme();
+  fui::TextStyle small = theme.smallText;
+  small.align = fui::TextAlign::Center;
+  fui::drawText(screen.target(), screen.takeTop(theme.rowHeight, theme.spaceSm), tr(STR_CHESS_COMPUTER_HINT), small);
+  buildCards(screen);
+}
+
+void ChessActivity::buildLocal(UiScreen& screen) {
+  const auto& theme = screen.theme();
+  fui::TextStyle hint = theme.smallText;
+  hint.maxLines = 3;
+  hint.align = fui::TextAlign::Center;
+  fui::drawText(screen.target(), screen.takeTop(static_cast<int16_t>(theme.rowHeight * 2), theme.spaceLg),
+                tr(STR_CHESS_LOCAL_HINT), hint);
+  screen.button(tr(STR_CHESS_START_LOCAL), ACTION_BUTTON, BTN_LOCAL);
+}
+
+void ChessActivity::buildChallenge(UiScreen& screen) {
+  const auto& theme = screen.theme();
+  // Bottom: a typed name for anyone not in the list.
+  screen.button(tr(STR_CHESS_TYPE_NAME), ACTION_BUTTON, BTN_CHALLENGE_NAME, fui::StateNormal,
+                fui::LayoutAnchor::Bottom);
+  fui::TextStyle hint = theme.smallText;
+  hint.maxLines = 3;
+  hint.align = fui::TextAlign::Center;
+  if (!CHESS_SETTINGS.hasToken()) {
+    fui::drawText(screen.target(), screen.takeTop(static_cast<int16_t>(theme.rowHeight * 2), theme.spaceSm),
+                  tr(STR_CHESS_NEED_TOKEN_HINT), hint);
+    return;
   }
+  fui::ToggleRowProps rated;
+  rated.row.label = tr(STR_CHESS_RATED);
+  rated.checked = seekRated;
+  rated.toggleAction = ACTION_RATED;
+  rated.row.inputMask = fui::InputTouch;
+  screen.toggleRow(rated);
+  screen.spacer(theme.spaceSm);
+  if (friendsLoading) {
+    screen.centeredText(tr(STR_CHESS_LOADING));
+    return;
+  }
+  if (!signedIn()) {
+    screen.button(tr(STR_CHESS_LOAD_FRIENDS), ACTION_BUTTON, BTN_LOAD_FRIENDS);
+    return;
+  }
+  if (friendsStatus == 401 || friendsStatus == 403) {
+    fui::drawText(screen.target(), screen.takeTop(static_cast<int16_t>(theme.rowHeight * 2), theme.spaceSm),
+                  tr(STR_CHESS_FRIENDS_SCOPE), hint);
+    return;
+  }
+  if (friendsStatus != 0) {
+    char msg[64];
+    snprintf(msg, sizeof(msg), "%s (%d)", tr(STR_CHESS_ERROR_NETWORK), friendsStatus);
+    screen.centeredText(msg);
+    return;
+  }
+  const int count = friends.size() < static_cast<size_t>(MAX_FRIENDS) ? static_cast<int>(friends.size()) : MAX_FRIENDS;
+  if (count == 0) {
+    fui::drawText(screen.target(), screen.takeTop(static_cast<int16_t>(theme.rowHeight * 2), theme.spaceSm),
+                  tr(STR_CHESS_NO_FRIENDS), hint);
+    return;
+  }
+  fui::ListProps props;
+  props.items = friendRows;
+  props.count = static_cast<uint16_t>(count);
+  props.action = ACTION_ROW;
+  props.inputMask = fui::InputTouch;
+  props.selectedIndex = -1;
+  props.labelText = theme.bodyText;
+  props.valueText = theme.smallText;
+  const int16_t rowH = static_cast<int16_t>(theme.rowHeight + theme.spaceSm);
+  friendNav.syncToProps(screen.body(), rowH, theme.listRowGap, count, props);
+  props.selectedIndex = -1;
+  screen.list(props);
+}
 
+void ChessActivity::buildCards(UiScreen& screen) {
   // Time-control cards in a grid that fills what is left.
+  const auto& theme = screen.theme();
   const int count = presetCount() + 1;
   const TimeControl* set = cards();
   const fui::Rect body = screen.body();
@@ -1592,13 +1699,7 @@ void ChessActivity::buildTabBar(UiScreen& screen) {
   props.inputMask = fui::InputTouch;
   props.text = theme.bodyText;
   props.divider = true;
-  fui::StyleSet styles;
-  styles.explicitlySet = true;
-  styles.normal.foreground = fui::Paint::solid(fui::Color::Black);
-  styles.selected.background = fui::Paint::solid(fui::Color::Black);
-  styles.selected.foreground = fui::Paint::solid(fui::Color::White);
-  styles.selected.radius = theme.listRowRadius;
-  props.tabStyles = styles;
+  props.tabStyles = tabStyles(theme);
   const fui::Rect band = screen.takeTop(theme.rowHeight, theme.spaceSm);
   fui::tabBar(screen.frame(), band, props);
 }
@@ -1642,8 +1743,18 @@ void ChessActivity::buildPuzzles(UiScreen& screen) {
   fui::TextStyle small = theme.smallText;
   small.align = fui::TextAlign::Center;
 
-  // The store: puzzles that wait to be solved, and results that wait to go out.
-  snprintf(puzzleCountLine, sizeof(puzzleCountLine), tr(STR_CHESS_SAVED_PUZZLES), PUZZLE_STORE.count());
+  // The store: puzzles that fit the selected themes, and results that wait to go out.
+  const int ready = readyCount();
+  const int total = PUZZLE_STORE.count();
+  if (total == 0) {
+    snprintf(puzzleCountLine, sizeof(puzzleCountLine), "%s", tr(STR_CHESS_NO_PUZZLES_SAVED));
+  } else if (selectedThemeCount() == 0) {
+    snprintf(puzzleCountLine, sizeof(puzzleCountLine), tr(STR_CHESS_PUZZLES_SAVED), total);
+  } else if (ready > 0) {
+    snprintf(puzzleCountLine, sizeof(puzzleCountLine), tr(STR_CHESS_PUZZLES_MATCH), ready, total);
+  } else {
+    snprintf(puzzleCountLine, sizeof(puzzleCountLine), tr(STR_CHESS_PUZZLES_MATCH_NONE), total);
+  }
   fui::drawText(screen.target(), screen.takeTop(theme.rowHeight, 0), puzzleCountLine, theme.bodyText);
   if (PUZZLE_STORE.pendingResults() > 0) {
     snprintf(puzzleResultsLine, sizeof(puzzleResultsLine), tr(STR_CHESS_RESULTS_TO_SEND),
@@ -1661,8 +1772,8 @@ void ChessActivity::buildPuzzles(UiScreen& screen) {
   diff.incrementValue = STEP_DIFF_UNIT;
   diff.row.inputMask = fui::InputTouch;
   screen.stepperRow(diff);
-  snprintf(themeLine, sizeof(themeLine), tr(STR_CHESS_THEME_LINE),
-           I18N.get(PUZZLE_THEMES[puzzleThemeIndex(CHESS_SETTINGS.getPuzzleTheme().c_str())].name));
+  buildThemeSummary();
+  snprintf(themeLine, sizeof(themeLine), tr(STR_CHESS_THEMES_LINE), themeSummary);
   screen.button(themeLine, ACTION_BUTTON, BTN_THEME);
   screen.spacer(theme.spaceLg);
 
@@ -1757,9 +1868,19 @@ void ChessActivity::buildStudies(UiScreen& screen) {
 void ChessActivity::buildThemes(UiScreen& screen) {
   const auto& theme = screen.theme();
   screen.button(tr(STR_BACK), ACTION_BUTTON, BTN_BACK, fui::StateNormal, fui::LayoutAnchor::Bottom);
-  for (int i = 0; i < PUZZLE_THEME_COUNT; ++i) {
+  const int selected = selectedThemeCount();
+  themeRows[0] = fui::ListItem{};
+  themeRows[0].label = tr(STR_CHESS_ALL_THEMES);
+  themeRows[0].toggle = true;
+  themeRows[0].toggleChecked = selected == 0;
+  themeRows[0].actionValue = 0;
+  for (int i = 1; i < PUZZLE_THEME_COUNT; ++i) {
+    snprintf(themeRowLabels[i], sizeof(themeRowLabels[i]), tr(STR_CHESS_THEME_WITH_COUNT),
+             I18N.get(PUZZLE_THEMES[i].name), PUZZLE_STORE.count(1u << i));
     themeRows[i] = fui::ListItem{};
-    themeRows[i].label = I18N.get(PUZZLE_THEMES[i].name);
+    themeRows[i].label = themeRowLabels[i];
+    themeRows[i].toggle = true;
+    themeRows[i].toggleChecked = themeSelected[i];
     themeRows[i].actionValue = static_cast<int16_t>(i);
   }
   fui::ListProps props;
@@ -1767,10 +1888,91 @@ void ChessActivity::buildThemes(UiScreen& screen) {
   props.count = PUZZLE_THEME_COUNT;
   props.action = ACTION_ROW;
   props.inputMask = fui::InputTouch;
+  props.selectedIndex = -1;
   props.labelText = theme.bodyText;
   const int16_t rowH = static_cast<int16_t>(theme.rowHeight + theme.spaceSm);
   themeNav.syncToProps(screen.body(), rowH, theme.listRowGap, PUZZLE_THEME_COUNT, props);
+  props.selectedIndex = -1;
   screen.list(props);
+}
+
+// --- puzzle themes ------------------------------------------------------------
+
+void ChessActivity::loadThemeSelection() {
+  for (bool& on : themeSelected) on = false;
+  const std::string& keys = CHESS_SETTINGS.getPuzzleThemes();
+  size_t start = 0;
+  while (start < keys.size()) {
+    size_t end = keys.find(',', start);
+    if (end == std::string::npos) end = keys.size();
+    const std::string key = keys.substr(start, end - start);
+    for (int i = 1; i < PUZZLE_THEME_COUNT; ++i) {
+      if (key == PUZZLE_THEMES[i].key) themeSelected[i] = true;
+    }
+    start = end + 1;
+  }
+}
+
+void ChessActivity::saveThemeSelection() {
+  std::string keys;
+  for (int i = 0; i < PUZZLE_THEME_COUNT; ++i) {
+    if (!themeSelected[i]) continue;
+    if (!keys.empty()) keys.push_back(',');
+    keys += PUZZLE_THEMES[i].key;
+  }
+  CHESS_SETTINGS.setPuzzleThemes(keys);
+  CHESS_SETTINGS.saveToFile();
+}
+
+int ChessActivity::selectedThemeCount() const {
+  int n = 0;
+  for (const bool on : themeSelected) n += on ? 1 : 0;
+  return n;
+}
+
+uint32_t ChessActivity::selectionMask() const {
+  uint32_t mask = 0;
+  for (int i = 1; i < PUZZLE_THEME_COUNT; ++i) {
+    if (themeSelected[i]) mask |= 1u << i;
+  }
+  return mask;
+}
+
+int ChessActivity::readyCount() const { return PUZZLE_STORE.count(selectionMask()); }
+
+const char* ChessActivity::downloadThemeFor(int batch) const {
+  const int selected = selectedThemeCount();
+  if (selected == 0) return "mix";
+  int skip = batch % selected;
+  for (int i = 1; i < PUZZLE_THEME_COUNT; ++i) {
+    if (!themeSelected[i]) continue;
+    if (skip == 0) return PUZZLE_THEMES[i].key;
+    --skip;
+  }
+  return "mix";
+}
+
+bool ChessActivity::takeSelected(lichess::Puzzle& out) { return PUZZLE_STORE.takeNext(selectionMask(), out); }
+
+void ChessActivity::buildThemeSummary() {
+  const int selected = selectedThemeCount();
+  if (selected == 0) {
+    snprintf(themeSummary, sizeof(themeSummary), "%s", tr(STR_CHESS_ALL_THEMES));
+    return;
+  }
+  themeSummary[0] = '\0';
+  int shown = 0;
+  for (int i = 0; i < PUZZLE_THEME_COUNT && shown < 2; ++i) {
+    if (!themeSelected[i]) continue;
+    const size_t used = strlen(themeSummary);
+    snprintf(themeSummary + used, sizeof(themeSummary) - used, "%s%s", shown ? ", " : "",
+             I18N.get(PUZZLE_THEMES[i].name));
+    ++shown;
+  }
+  if (selected > shown) {
+    const size_t used = strlen(themeSummary);
+    snprintf(themeSummary + used, sizeof(themeSummary) - used, " +%d", selected - shown);
+  }
 }
 
 void ChessActivity::rebuildFriendRows() {
@@ -1781,60 +1983,6 @@ void ChessActivity::rebuildFriendRows() {
     friendRows[i].value = friends[i].playing ? tr(STR_CHESS_PLAYING) : friends[i].online ? tr(STR_CHESS_ONLINE) : "";
     friendRows[i].actionValue = static_cast<int16_t>(i);
   }
-}
-
-void ChessActivity::buildFriends(UiScreen& screen) {
-  const auto& theme = screen.theme();
-  // Bottom: a typed name for anyone not in the list, and Back.
-  const fui::Rect band = screen.takeBottom(theme.rowHeight, theme.spaceSm);
-  const int16_t half = static_cast<int16_t>((band.width - theme.spaceSm) / 2);
-  const StrId labels[2] = {StrId::STR_CHESS_TYPE_NAME, StrId::STR_BACK};
-  const int16_t values[2] = {BTN_CHALLENGE_NAME, BTN_BACK};
-  for (int i = 0; i < 2; ++i) {
-    fui::ButtonProps b;
-    b.label = I18N.get(labels[i]);
-    b.action = ACTION_BUTTON;
-    b.value = values[i];
-    b.inputMask = fui::InputTouch;
-    b.text = theme.smallText;
-    screen.button(b, fui::Rect{static_cast<int16_t>(band.x + i * (half + theme.spaceSm)), band.y, half, band.height});
-  }
-  if (friendsLoading) {
-    screen.centeredText(tr(STR_CHESS_LOADING));
-    return;
-  }
-  fui::TextStyle hint = theme.smallText;
-  hint.maxLines = 3;
-  hint.align = fui::TextAlign::Center;
-  if (friendsStatus == 401 || friendsStatus == 403) {
-    fui::drawText(screen.target(), screen.takeTop(static_cast<int16_t>(theme.rowHeight * 2), theme.spaceSm),
-                  tr(STR_CHESS_FRIENDS_SCOPE), hint);
-    return;
-  }
-  if (friendsStatus != 0) {
-    char msg[64];
-    snprintf(msg, sizeof(msg), "%s (%d)", tr(STR_CHESS_ERROR_NETWORK), friendsStatus);
-    screen.centeredText(msg);
-    return;
-  }
-  const int count = friends.size() < static_cast<size_t>(MAX_FRIENDS) ? static_cast<int>(friends.size()) : MAX_FRIENDS;
-  if (count == 0) {
-    fui::drawText(screen.target(), screen.takeTop(static_cast<int16_t>(theme.rowHeight * 2), theme.spaceSm),
-                  tr(STR_CHESS_NO_FRIENDS), hint);
-    return;
-  }
-  fui::ListProps props;
-  props.items = friendRows;
-  props.count = static_cast<uint16_t>(count);
-  props.action = ACTION_ROW;
-  props.inputMask = fui::InputTouch;
-  props.selectedIndex = -1;
-  props.labelText = theme.bodyText;
-  props.valueText = theme.smallText;
-  const int16_t rowH = static_cast<int16_t>(theme.rowHeight + theme.spaceSm);
-  friendNav.syncToProps(screen.body(), rowH, theme.listRowGap, count, props);
-  props.selectedIndex = -1;
-  screen.list(props);
 }
 
 void ChessActivity::buildStats(UiScreen& screen) {
@@ -1931,14 +2079,10 @@ void ChessActivity::render(RenderLock&&) {
   const auto& metrics = theme.getMetrics();
   const Rect safe = theme.getScreenSafeArea(renderer, false, false);
   const char* subtitle = nullptr;
-  if (state == State::Computer) {
-    subtitle = tr(STR_CHESS_COMPUTER);
-  } else if (state == State::Themes) {
+  if (state == State::Themes) {
     subtitle = tr(STR_CHESS_THEME);
   } else if (state == State::Stats) {
     subtitle = tr(STR_CHESS_YOUR_RESULTS);
-  } else if (state == State::Friends) {
-    subtitle = tr(STR_CHESS_CHALLENGE);
   } else if (state == State::Lobby || state == State::Seeking || state == State::Custom) {
     if (signedIn() && account.username[0]) {
       subtitle = account.username;

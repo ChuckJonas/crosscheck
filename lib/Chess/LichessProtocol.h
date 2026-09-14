@@ -201,18 +201,14 @@ bool parseGameSummary(const char* line, size_t len, const char* myUserId, GameSu
 struct Puzzle {
   char id[GAME_ID_LEN] = {};
   int rating = 0;
-  // Position to solve, when the response carries one (the daily puzzle does).
-  char fen[96] = {};
-  // Otherwise the game's moves in standard notation; the puzzle position is
-  // the position after all of them, and the solver moves next.
+  // The game's moves in standard notation; the puzzle position is the
+  // position after all of them, and the solver moves next.
   std::string pgn;
-  // The opponent's last move, for the highlight (daily puzzle only).
-  char lastMove[6] = {};
   // Solution in UCI, solver and opponent moves alternating, space separated.
   std::string solution;
+  // Lichess theme keys of the puzzle, comma separated ("endgame,fork").
+  std::string themes;
 };
-
-bool parsePuzzle(const char* json, size_t len, Puzzle& out);
 
 // Parses the "puzzles" array of GET or POST /api/puzzle/batch/{angle}.
 // Appends up to maxPuzzles entries to out and returns how many were added.
@@ -240,8 +236,8 @@ bool parseGameId(const char* line, size_t len, char* out, size_t outSize);
 // when a move was illegal.
 int replayMoves(const std::string& moves, chess::Position& out, chess::Move* lastMove, int maxMoves = -1);
 // Same, starting from base instead of the start position.
-int replayMovesFrom(const chess::Position& base, const std::string& moves, chess::Position& out,
-                    chess::Move* lastMove, int maxMoves = -1);
+int replayMovesFrom(const chess::Position& base, const std::string& moves, chess::Position& out, chess::Move* lastMove,
+                    int maxMoves = -1);
 // Number of moves in a UCI move list.
 int countMoves(const std::string& moves);
 

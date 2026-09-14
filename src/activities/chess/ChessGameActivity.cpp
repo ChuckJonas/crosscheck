@@ -76,31 +76,21 @@ void ChessGameActivity::onEnter() {
     return;
   }
   if (puzzle) {
-    // The daily puzzle gives a FEN; "next" gives the game moves instead, and
-    // the puzzle position is the position after all of them.
-    Move last;
-    bool haveLast = false;
-    if (puzzleData.fen[0]) {
-      if (!puzzleBase.setFromFen(puzzleData.fen)) puzzleBase.setStartPosition();
-      haveLast = chess::moveFromUci(puzzleData.lastMove, last);
-    } else {
-      std::string uci;
-      puzzleBase.setStartPosition();
-      if (chess::replaySan(puzzleData.pgn.c_str(), puzzleBase, &uci) < 0) {
-        LOG_ERR("CHESS", "Puzzle %s: could not replay the game moves", puzzleData.id);
-      }
-      const size_t space = uci.rfind(' ');
-      haveLast = chess::moveFromUci(uci.c_str() + (space == std::string::npos ? 0 : space + 1), last);
+    // The puzzle position is the position after the game's moves; the last
+    // of them is the opponent's move that the highlight shows.
+    std::string uci;
+    puzzleBase.setStartPosition();
+    if (chess::replaySan(puzzleData.pgn.c_str(), puzzleBase, &uci) < 0) {
+      LOG_ERR("CHESS", "Puzzle %s: could not replay the game moves", puzzleData.id);
     }
+    const size_t space = uci.rfind(' ');
+    Move last;
+    if (chess::moveFromUci(uci.c_str() + (space == std::string::npos ? 0 : space + 1), last)) puzzleLastMove = last;
     position = puzzleBase;
     solverColor = position.sideToMove();
     board.setFlipped(solverColor == chess::Color::Black);
-    if (haveLast) {
-      marks.lastFrom = last.from;
-      marks.lastTo = last.to;
-      puzzleData.lastMove[0] = '\0';
-      chess::moveToUci(last, puzzleData.lastMove);
-    }
+    marks.lastFrom = puzzleLastMove.from;
+    marks.lastTo = puzzleLastMove.to;
     refreshLegalMoves();
     forceFullRefresh = true;
     requestUpdate();
@@ -475,11 +465,7 @@ void ChessGameActivity::showPly(int ply) {
   }
   viewPly = ply;
   lichess::replayMovesFrom(basePosition(), moveList(), viewPosition, &viewLastMove, ply);
-  if (puzzle && ply == 0) {
-    // The puzzle's opening highlight is the opponent's last move before it.
-    Move last;
-    if (chess::moveFromUci(puzzleData.lastMove, last)) viewLastMove = last;
-  }
+  if (puzzle && ply == 0) viewLastMove = puzzleLastMove;  // the opponent's move before the puzzle
   requestUpdate();
 }
 

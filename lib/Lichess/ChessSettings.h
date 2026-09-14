@@ -24,10 +24,12 @@ class ChessSettings : public PersistableStore<ChessSettings> {
   uint8_t aiLevel = 3;
   // Lobby tab: 0 play, 1 games, 2 puzzles, 3 studies.
   uint8_t lobbyTab = 0;
+  // Play sub-tab: 0 match, 1 computer, 2 challenge, 3 local.
+  uint8_t playTab = 0;
   // Puzzle difficulty index: easiest, easier, normal, harder, hardest.
   uint8_t puzzleDifficulty = 2;
-  // Puzzle theme key for downloads ("mix", "endgame", ...).
-  std::string puzzleTheme = "mix";
+  // Selected puzzle themes, comma separated keys; empty means all themes.
+  std::string puzzleThemes;
 
   ChessSettings() = default;
   ~ChessSettings() = default;
@@ -62,10 +64,12 @@ class ChessSettings : public PersistableStore<ChessSettings> {
   int getAiLevel() const { return aiLevel; }
   int getLobbyTab() const { return lobbyTab; }
   void setLobbyTab(int value) { lobbyTab = static_cast<uint8_t>(value); }
+  int getPlayTab() const { return playTab; }
+  void setPlayTab(int value) { playTab = static_cast<uint8_t>(value); }
   int getPuzzleDifficulty() const { return puzzleDifficulty; }
   void setPuzzleDifficulty(int value) { puzzleDifficulty = static_cast<uint8_t>(value); }
-  const std::string& getPuzzleTheme() const { return puzzleTheme; }
-  void setPuzzleTheme(const std::string& value) { puzzleTheme = value.empty() ? "mix" : value; }
+  const std::string& getPuzzleThemes() const { return puzzleThemes; }
+  void setPuzzleThemes(const std::string& value) { puzzleThemes = value; }
   void setAiLevel(int value) { aiLevel = static_cast<uint8_t>(value); }
   void setClockRefreshSec(int value) { clockRefreshSec = static_cast<uint8_t>(value); }
   void setFullRefreshEveryMove(bool value) { fullRefreshEveryMove = value; }
