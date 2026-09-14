@@ -4,6 +4,12 @@ A Lichess client for the Xteink X4 Pro e-reader. Play, review, solve puzzles, an
 
 crosscheck is a fork of [CrossPoint Reader](https://github.com/crosspoint-reader/crosspoint-reader), the open-source e-reader firmware. Everything about reading books, the device, Wi-Fi setup, fonts, and file transfer is CrossPoint's and is documented there. This README covers the Lichess app only.
 
+<p align="center">
+  <img src="docs/images/crosscheck/menu.png" width="320" alt="The lobby: the Play tab with the Match sub-tab, the Rated switch, and the seek cards">
+  &nbsp;&nbsp;
+  <img src="docs/images/crosscheck/game.png" width="320" alt="A game against Stockfish level 3 with the clocks, the last move marked, and Resign, Draw, and Menu">
+</p>
+
 ## What it does
 
 **Play**
@@ -43,7 +49,7 @@ Only the X4 Pro is supported. The app needs a touch screen.
 ## Setup
 
 1. Create a Lichess API token with [this prefilled link](https://lichess.org/account/oauth/token/create?scopes[]=board:play&scopes[]=challenge:write&scopes[]=challenge:read&scopes[]=puzzle:read&scopes[]=puzzle:write&scopes[]=study:read&scopes[]=follow:read&description=crosscheck+X4+Pro). It ticks every scope the app uses: `board:play`, `challenge:write`, `challenge:read`, `puzzle:read`, `puzzle:write`, `study:read`, `follow:read`. The device shows the same link as a QR code until a token is stored.
-2. Enter the token on the device, or put it on the SD card in `/.crosspoint/lichess/lichess.json` as `{ "token": "..." }`. The device rewrites the file with the token scrambled as `token_obf`; a plain `token` field always wins.
+2. Type the token on the device with the on-screen keyboard, or put it on the SD card in `/.crosspoint/lichess/lichess.json` as `{ "token": "..." }`. A token is case sensitive, so check every character when you type it. The device rewrites the file with the token scrambled as `token_obf`; a plain `token` field always wins.
 3. To change or remove the token later, tap the header where the account name shows.
 
 ## Using it
