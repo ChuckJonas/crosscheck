@@ -56,11 +56,11 @@ Only the X4 Pro is supported. The app needs a touch screen.
 
 **Studies** are documents Lichess users publish. To get one onto the device without typing: open it on lichess.org or in the Lichess app, choose **Clone**, then tap **My studies** on the device and tap the clone. It downloads to the card and opens offline from then on. Clones are private, which is what `study:read` is for. **By user** lists another player's public studies (`lichess` has hundreds of annotated tournament games and puzzle packs), and **Open by ID** takes a study id or link. In a chapter, tap the comment preview to read the full commentary of that move; the menu has Practice, which hides the next move and checks yours.
 
-## What the Lichess API does not allow
+## Limits of the Lichess API
 
-- Blitz and bullet seeks. Lichess keeps those pools for its own clients. Blitz works against the engine and in challenges to a friend.
-- Requesting computer analysis. It takes one tap on the website, and the QR code gets you there.
-- Liked or bookmarked studies. Clone is the workaround.
+- **No games against people faster than 10+0.** Lichess pairs open seeks from third-party clients only in rapid and classical; the blitz and bullet pools are reserved for its own apps. Faster games work against the engine and in challenges to a friend.
+- **Computer analysis cannot be requested through the API.** Request it on the website: the review's Request analysis shows a QR code that opens the game on Lichess, where the request is one tap. Then tap Check for analysis on the device, and the evaluations load into the open review.
+- **No list of liked or bookmarked studies.** Clone the study on lichess.org and it appears under My studies.
 
 ## Development
 
